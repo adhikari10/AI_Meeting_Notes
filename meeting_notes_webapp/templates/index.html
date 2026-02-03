@@ -79,7 +79,8 @@
             
             <div class="capture-container">
                 <div class="capture-options">
-                    <div class="option-card" onclick="selectOption('speaker')">
+                    <!-- FIX 11: Pass event object explicitly via onclick -->
+                    <div class="option-card" onclick="selectOption('speaker', event)">
                         <input type="radio" name="captureOption" id="speaker" value="speaker">
                         <label for="speaker">
                             <div class="option-icon">
@@ -90,7 +91,7 @@
                         </label>
                     </div>
                     
-                    <div class="option-card" onclick="selectOption('microphone')">
+                    <div class="option-card" onclick="selectOption('microphone', event)">
                         <input type="radio" name="captureOption" id="microphone" value="microphone">
                         <label for="microphone">
                             <div class="option-icon">
@@ -101,7 +102,7 @@
                         </label>
                     </div>
                     
-                    <div class="option-card" onclick="selectOption('both')">
+                    <div class="option-card" onclick="selectOption('both', event)">
                         <input type="radio" name="captureOption" id="both" value="both">
                         <label for="both">
                             <div class="option-icon">
@@ -117,7 +118,6 @@
                 <div class="device-selection">
                     <h3><i class="fas fa-headphones"></i> Select Audio Device</h3>
                     <div class="device-list" id="deviceList">
-                        <!-- Devices will be loaded here -->
                         <div class="loading">Loading devices...</div>
                     </div>
                 </div>
@@ -170,7 +170,6 @@
             </div>
             
             <div class="upload-container">
-                <!-- File Drop Zone -->
                 <div class="drop-zone" id="dropZone">
                     <i class="fas fa-cloud-upload-alt"></i>
                     <h3>Drop your files here</h3>
@@ -179,7 +178,6 @@
                     <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.mp4,.avi,.mov" hidden>
                 </div>
                 
-                <!-- File Info -->
                 <div class="file-info" id="fileInfo" style="display: none;">
                     <div class="file-preview">
                         <i class="fas fa-file-audio"></i>
@@ -193,7 +191,6 @@
                     </div>
                 </div>
                 
-                <!-- Processing Options -->
                 <div class="processing-options">
                     <h3><i class="fas fa-cogs"></i> Processing Options</h3>
                     
@@ -219,17 +216,15 @@
                         <select id="modelSelect">
                             <option value="groq">Groq (Fast & Free)</option>
                             <option value="deepseek">DeepSeek (Cheap)</option>
-                            <option value="local">Local Processing</option>
+                            <option value="openai">OpenAI</option>
                         </select>
                     </div>
                 </div>
                 
-                <!-- Process Button -->
                 <button id="processBtn" class="btn-primary" onclick="processFile()" disabled>
                     <i class="fas fa-play"></i> Process File
                 </button>
                 
-                <!-- Progress -->
                 <div class="progress-container" id="progressContainer" style="display: none;">
                     <div class="progress-header">
                         <h4>Processing...</h4>
@@ -246,7 +241,6 @@
                     </div>
                 </div>
                 
-                <!-- Results -->
                 <div class="results-container" id="resultsContainer" style="display: none;">
                     <div class="results-header">
                         <h3><i class="fas fa-file-alt"></i> Results</h3>
@@ -256,9 +250,10 @@
                     </div>
                     
                     <div class="results-tabs">
-                        <button class="tab-btn active" onclick="switchTab('transcriptTab')">Transcript</button>
-                        <button class="tab-btn" onclick="switchTab('summaryTab')">Summary</button>
-                        <button class="tab-btn" onclick="switchTab('actionsTab')">Action Items</button>
+                        <!-- FIX 12: Pass event to switchTab -->
+                        <button class="tab-btn active" onclick="switchTab('transcriptTab', event)">Transcript</button>
+                        <button class="tab-btn" onclick="switchTab('summaryTab', event)">Summary</button>
+                        <button class="tab-btn" onclick="switchTab('actionsTab', event)">Action Items</button>
                     </div>
                     
                     <div class="tab-content">
@@ -284,7 +279,6 @@
             </div>
             
             <div class="notes-container">
-                <!-- Search & Filter -->
                 <div class="notes-controls">
                     <div class="search-box">
                         <i class="fas fa-search"></i>
@@ -307,13 +301,10 @@
                     </div>
                 </div>
                 
-                <!-- Notes Grid -->
                 <div class="notes-grid" id="notesGrid">
-                    <!-- Notes will be loaded here -->
                     <div class="loading">Loading notes...</div>
                 </div>
                 
-                <!-- Selected Note Details -->
                 <div class="note-details" id="noteDetails" style="display: none;">
                     <div class="note-header">
                         <h3 id="detailTitle">Meeting Notes</h3>
@@ -347,10 +338,11 @@
                     </div>
                     
                     <div class="note-content-tabs">
-                        <button class="tab-btn active" onclick="switchDetailTab('detailTranscript')">Transcript</button>
-                        <button class="tab-btn" onclick="switchDetailTab('detailSummary')">Summary</button>
-                        <button class="tab-btn" onclick="switchDetailTab('detailActions')">Actions</button>
-                        <button class="tab-btn" onclick="switchDetailTab('detailAnalysis')">Full Analysis</button>
+                        <!-- FIX 13: Pass event to switchDetailTab -->
+                        <button class="tab-btn active" onclick="switchDetailTab('detailTranscript', event)">Transcript</button>
+                        <button class="tab-btn" onclick="switchDetailTab('detailSummary', event)">Summary</button>
+                        <button class="tab-btn" onclick="switchDetailTab('detailActions', event)">Actions</button>
+                        <button class="tab-btn" onclick="switchDetailTab('detailAnalysis', event)">Full Analysis</button>
                     </div>
                     
                     <div class="note-content">
@@ -385,7 +377,7 @@
     </footer>
 
     <!-- JavaScript -->
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
