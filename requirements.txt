@@ -1,0 +1,9 @@
+openai-whisper
+pyaudio
+openai>=1.0.0
+python-dotenv
+rich
+numpy
+flask
+flask-socketio
+flask-cors
