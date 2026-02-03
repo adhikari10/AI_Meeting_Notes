@@ -421,4 +421,4 @@ For issues or questions:
 
 **Happy Note Taking! 📝🤖**
 
-Made with ❤️ by [Your Name]
+Made with ❤️ by Bibek Adhikari
