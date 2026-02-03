@@ -316,6 +316,30 @@ body {
     border-color: #4CAF50;
 }
 
+.device-item.recommended {
+    background: #fff3cd;
+    border: 2px solid #4CAF50;
+    box-shadow: 0 2px 10px rgba(76, 175, 80, 0.2);
+}
+
+.device-item.recommended:hover {
+    background: #fffbe6;
+    border-color: #4CAF50;
+}
+
+.device-warning {
+    background: #fff3cd;
+    border: 2px solid #ff9800;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 15px;
+    color: #856404;
+}
+
+.device-warning strong {
+    color: #ff9800;
+}
+
 .device-name {
     font-weight: 600;
     margin-bottom: 5px;

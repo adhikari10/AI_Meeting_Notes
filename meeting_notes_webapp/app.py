@@ -101,9 +101,13 @@ class MeetingAssistant:
         if not text or len(text) < 10:
             return {"summary": "", "actions": [], "decisions": []}
 
+        # FIX 1: If the requested provider isn't available, fall back to first available or simple
         if provider not in self.providers:
-            # Fallback to simple analysis
-            return self.simple_analysis(text)
+            if self.providers:
+                provider = list(self.providers.keys())[0]
+                print(f"Falling back to provider: {provider}")
+            else:
+                return self.simple_analysis(text)
 
         try:
             return self.analyze_with_openai(text, provider)
@@ -140,7 +144,6 @@ class MeetingAssistant:
         content = response.choices[0].message.content
         
         try:
-            import json
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
             return json.loads(content)
@@ -151,7 +154,6 @@ class MeetingAssistant:
         """Simple rule-based analysis"""
         import re
         
-        # Extract potential action items
         actions = []
         patterns = [
             r'(\w+)\s+(?:will|should|to)\s+(.+)',
@@ -164,7 +166,6 @@ class MeetingAssistant:
                 if len(match) == 2:
                     actions.append(f"{match[0]}: {match[1]}")
         
-        # Create summary (first 2 sentences)
         sentences = [s.strip() for s in text.split('.') if s.strip()]
         summary = '. '.join(sentences[:2]) + '.' if len(sentences) >= 2 else text[:200]
         
@@ -176,12 +177,11 @@ class MeetingAssistant:
     
     def process_file(self, filepath, options):
         """Process uploaded file"""
-        # Transcribe
         result = self.whisper_model.transcribe(filepath)
         transcript = result["text"]
         
-        # Analyze with AI
-        provider = options.get('model', 'gemini')
+        # FIX 2: Default to 'groq' instead of 'gemini' which was never a valid provider
+        provider = options.get('model', 'groq')
         analysis = self.analyze_with_ai(transcript, provider)
         
         return {
@@ -239,24 +239,21 @@ def process_file():
     if file.filename == '':
         return jsonify({"error": "No file selected"}), 400
     
-    # Save uploaded file
     filename = secure_filename(file.filename)
     filepath = Path(app.config['UPLOAD_FOLDER']) / filename
     file.save(filepath)
     
-    # Get processing options
     options = {
         'generateSummary': request.form.get('generateSummary') == 'true',
         'extractActions': request.form.get('extractActions') == 'true',
         'detectDecisions': request.form.get('detectDecisions') == 'true',
-        'model': request.form.get('model', 'gemini')
+        # FIX 3: default changed from 'gemini' to 'groq'
+        'model': request.form.get('model', 'groq')
     }
     
     try:
-        # Process file
         result = assistant.process_file(str(filepath), options)
         
-        # Save notes
         notes_data = {
             "title": filename,
             "timestamp": datetime.now().isoformat(),
@@ -290,7 +287,7 @@ def get_notes():
                 "id": filepath.stem,
                 "title": data.get("title", "Meeting Notes"),
                 "date": datetime.fromisoformat(data.get("timestamp")).strftime("%Y-%m-%d %H:%M"),
-                "preview": data.get("summary", "")[:100] + "...",
+                "preview": (data.get("summary", "") or "")[:100] + "...",
                 "duration": data.get("duration", "N/A"),
                 "type": data.get("source", "unknown").title(),
                 "size": f"{filepath.stat().st_size / 1024:.1f} KB"
@@ -312,9 +309,35 @@ def get_note_details(note_id):
         with open(filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        return jsonify(data)
-    except:
-        return jsonify({"error": "Error reading note"}), 500
+        # FIX 4: Return properly shaped object that JS actually expects
+        stat = filepath.stat()
+        response_data = {
+            **data,
+            "date": datetime.fromisoformat(data.get("timestamp", datetime.now().isoformat())).strftime("%Y-%m-%d %H:%M"),
+            "duration": data.get("duration", "N/A"),
+            "type": data.get("source", "unknown").title(),
+            "size": f"{stat.st_size / 1024:.1f} KB",
+            "analysis": json.dumps(data, indent=2)  # full raw JSON as the "analysis" tab content
+        }
+        
+        return jsonify(response_data)
+    except Exception as e:
+        return jsonify({"error": f"Error reading note: {e}"}), 500
+
+# FIX 5: Added the missing DELETE endpoint that script.js expects
+@app.route('/api/notes/<note_id>', methods=['DELETE'])
+def delete_note(note_id):
+    """Delete a note"""
+    filepath = Path(app.config['NOTES_FOLDER']) / f"{note_id}.json"
+    
+    if not filepath.exists():
+        return jsonify({"error": "Note not found"}), 404
+    
+    try:
+        filepath.unlink()
+        return jsonify({"message": "Note deleted successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/notes/<note_id>/download')
 def download_note(note_id):
@@ -324,7 +347,6 @@ def download_note(note_id):
     if not filepath.exists():
         return jsonify({"error": "Note not found"}), 404
     
-    # Create text version
     with open(filepath, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
@@ -348,7 +370,6 @@ DECISIONS:
 {chr(10).join(f'- {item}' for item in data.get('decisions', []))}
 """
     
-    # Create temporary text file
     temp_file = Path(app.config['NOTES_FOLDER']) / f"{note_id}.txt"
     with open(temp_file, 'w', encoding='utf-8') as f:
         f.write(text_content)
@@ -372,7 +393,6 @@ def handle_start_recording(data):
     recording_active = True
     recording_paused = False
     
-    # Start recording in background thread
     recording_thread = threading.Thread(
         target=record_audio,
         args=(data.get('deviceId', 0), data.get('type', 'microphone'))
@@ -413,14 +433,13 @@ def record_audio(device_id, capture_type):
     p = pyaudio.PyAudio()
     
     try:
-        # Open audio stream
         audio_stream = p.open(
             format=pyaudio.paInt16,
             channels=1,
             rate=16000,
             input=True,
             input_device_index=device_id,
-            frames_per_buffer=16000 * 5  # 5-second chunks
+            frames_per_buffer=16000 * 5
         )
         
         chunk_count = 0
@@ -430,23 +449,17 @@ def record_audio(device_id, capture_type):
                 time.sleep(0.1)
                 continue
             
-            # Read audio chunk
             audio_data = audio_stream.read(16000 * 5, exception_on_overflow=False)
-            
-            # Convert to numpy array
             audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
             
-            # Transcribe
             transcript = assistant.transcribe_audio(audio_np)
             
             if transcript:
-                # Emit transcript
                 socketio.emit('transcript_update', {
                     'timestamp': datetime.now().strftime("%H:%M:%S"),
                     'text': transcript
                 })
                 
-                # Analyze with AI (every 3 chunks to reduce API calls)
                 chunk_count += 1
                 if chunk_count % 3 == 0:
                     analysis = assistant.analyze_with_ai(transcript)

@@ -35,29 +35,39 @@ function setupNavigation() {
             // Update active nav link
             navLinks.forEach(l => l.classList.remove('active'));
             this.classList.add('active');
+
+            // FIX 6: Load notes when the user navigates to the notes section
+            if (target === 'notes') {
+                loadNotes();
+            }
         });
     });
 }
 
 function switchSection(sectionId) {
-    // Hide all sections
     document.querySelectorAll('.section').forEach(section => {
         section.classList.remove('active');
     });
     
-    // Show target section
     document.getElementById(sectionId).classList.add('active');
-    
-    // Update URL hash
     window.location.hash = sectionId;
+
+    // FIX 7: Also trigger loadNotes if navigating programmatically (e.g. feature card button)
+    if (sectionId === 'notes') {
+        loadNotes();
+    }
 }
 
 // Audio Capture
-function selectOption(option) {
+// FIX 8: selectOption now receives the event explicitly instead of relying on the global `event`
+function selectOption(option, evt) {
     const cards = document.querySelectorAll('.option-card');
     cards.forEach(card => card.classList.remove('selected'));
-    event.currentTarget.classList.add('selected');
-    
+    // Use evt if passed, otherwise fall back to window.event for legacy support
+    const e = evt || window.event;
+    if (e && e.currentTarget) {
+        e.currentTarget.classList.add('selected');
+    }
     document.querySelector(`#${option}`).checked = true;
 }
 
@@ -107,22 +117,18 @@ function startRecording() {
     const captureType = selectedOption.value;
     const deviceId = Array.from(document.querySelectorAll('.device-item')).indexOf(selectedDevice);
     
-    // Start recording via WebSocket
     socket.emit('start_recording', {
         type: captureType,
         deviceId: deviceId
     });
     
-    // Update UI
     isRecording = true;
     document.getElementById('startBtn').disabled = true;
     document.getElementById('stopBtn').disabled = false;
     document.getElementById('pauseBtn').disabled = false;
     
-    // Start timer
     startTimer();
     
-    // Update status
     const statusDot = document.querySelector('.status-dot');
     statusDot.classList.add('recording');
     document.querySelector('#statusIndicator span').textContent = 'Recording...';
@@ -136,10 +142,8 @@ function stopRecording() {
     document.getElementById('stopBtn').disabled = true;
     document.getElementById('pauseBtn').disabled = true;
     
-    // Stop timer
     stopTimer();
     
-    // Update status
     const statusDot = document.querySelector('.status-dot');
     statusDot.classList.remove('recording', 'paused');
     document.querySelector('#statusIndicator span').textContent = 'Recording stopped';
@@ -206,10 +210,8 @@ function setupFileUpload() {
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
     
-    // Click to browse
     dropZone.addEventListener('click', () => fileInput.click());
     
-    // Drag and drop
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.classList.add('dragover');
@@ -228,7 +230,6 @@ function setupFileUpload() {
         }
     });
     
-    // File input change
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length) {
             handleFile(e.target.files[0]);
@@ -237,7 +238,6 @@ function setupFileUpload() {
 }
 
 function handleFile(file) {
-    // Validate file type
     const validTypes = ['audio/', 'video/'];
     if (!validTypes.some(type => file.type.startsWith(type))) {
         alert('Please upload an audio or video file!');
@@ -246,13 +246,11 @@ function handleFile(file) {
     
     selectedFile = file;
     
-    // Update UI
     document.getElementById('fileName').textContent = file.name;
     document.getElementById('fileSize').textContent = formatFileSize(file.size);
     document.getElementById('fileInfo').style.display = 'block';
     document.getElementById('processBtn').disabled = false;
     
-    // Show preview
     const dropZone = document.getElementById('dropZone');
     dropZone.innerHTML = `
         <i class="fas fa-check-circle" style="color: #4CAF50;"></i>
@@ -292,7 +290,6 @@ async function processFile() {
     formData.append('detectDecisions', document.getElementById('detectDecisions').checked);
     formData.append('model', document.getElementById('modelSelect').value);
     
-    // Show progress
     document.getElementById('progressContainer').style.display = 'block';
     updateProgress(0, 'Uploading file...');
     
@@ -306,10 +303,7 @@ async function processFile() {
         
         const result = await response.json();
         
-        // Update progress
         updateProgress(100, 'Processing complete!');
-        
-        // Show results
         showResults(result);
         
     } catch (error) {
@@ -326,7 +320,6 @@ function updateProgress(percent, text) {
     progressFill.style.width = percent + '%';
     progressText.textContent = text;
     
-    // Update steps
     steps.forEach((step, index) => {
         step.classList.remove('active', 'completed');
         
@@ -339,22 +332,18 @@ function updateProgress(percent, text) {
 }
 
 function showResults(result) {
-    // Update tabs content
     document.getElementById('fileTranscript').textContent = result.transcript || 'No transcript available';
     document.getElementById('fileSummary').innerHTML = formatSummary(result.summary);
     document.getElementById('fileActions').innerHTML = formatActions(result.actions);
     
-    // Show results container
     document.getElementById('resultsContainer').style.display = 'block';
     
-    // Store result for download
     window.lastResult = result;
 }
 
 function formatSummary(summary) {
     if (!summary) return '<p>No summary available</p>';
     
-    // Convert markdown-like formatting to HTML
     return summary
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
@@ -420,6 +409,11 @@ async function loadNotes() {
         
         const notesGrid = document.getElementById('notesGrid');
         notesGrid.innerHTML = '';
+
+        if (notes.length === 0) {
+            notesGrid.innerHTML = '<div class="loading" style="border:none;">No saved notes yet.</div>';
+            return;
+        }
         
         notes.forEach(note => {
             const noteElement = document.createElement('div');
@@ -451,7 +445,6 @@ function selectNote(noteId, element) {
     element.classList.add('selected');
     selectedNote = noteId;
     
-    // Load note details
     loadNoteDetails(noteId);
 }
 
@@ -460,19 +453,17 @@ async function loadNoteDetails(noteId) {
         const response = await fetch(`/api/notes/${noteId}`);
         const note = await response.json();
         
-        // Update details panel
-        document.getElementById('detailTitle').textContent = note.title;
-        document.getElementById('detailDate').textContent = note.date;
-        document.getElementById('detailDuration').textContent = note.duration;
-        document.getElementById('detailType').textContent = note.type;
-        document.getElementById('detailSize').textContent = note.size;
+        document.getElementById('detailTitle').textContent = note.title || 'Meeting Notes';
+        document.getElementById('detailDate').textContent = note.date || 'N/A';
+        document.getElementById('detailDuration').textContent = note.duration || 'N/A';
+        document.getElementById('detailType').textContent = note.type || 'N/A';
+        document.getElementById('detailSize').textContent = note.size || 'N/A';
         
-        document.getElementById('detailTranscriptContent').textContent = note.transcript;
+        document.getElementById('detailTranscriptContent').textContent = note.transcript || 'No transcript available';
         document.getElementById('detailSummaryContent').innerHTML = formatSummary(note.summary);
         document.getElementById('detailActionsContent').innerHTML = formatActions(note.actions);
         document.getElementById('detailAnalysisContent').textContent = note.analysis || 'No analysis available';
         
-        // Show details panel
         document.getElementById('noteDetails').style.display = 'block';
         
     } catch (error) {
@@ -480,22 +471,22 @@ async function loadNoteDetails(noteId) {
     }
 }
 
-function switchDetailTab(tabId) {
-    // Hide all tabs
+// FIX 9: switchDetailTab and switchTab now receive evt explicitly — no more reliance on bare global `event`
+function switchDetailTab(tabId, evt) {
     document.querySelectorAll('.detail-pane').forEach(tab => {
         tab.classList.remove('active');
     });
     
-    // Remove active class from all tab buttons
     document.querySelectorAll('.note-content-tabs .tab-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     
-    // Show selected tab
     document.getElementById(tabId).classList.add('active');
-    
-    // Activate corresponding button
-    event.currentTarget.classList.add('active');
+
+    const e = evt || window.event;
+    if (e && e.currentTarget) {
+        e.currentTarget.classList.add('active');
+    }
 }
 
 function downloadSelectedNote() {
@@ -518,7 +509,6 @@ async function deleteSelectedNote() {
         });
         
         if (response.ok) {
-            // Reload notes
             loadNotes();
             document.getElementById('noteDetails').style.display = 'none';
             selectedNote = null;
@@ -528,23 +518,22 @@ async function deleteSelectedNote() {
     }
 }
 
-// Tab switching
-function switchTab(tabId) {
-    // Hide all tabs
+// FIX 10: switchTab also receives evt explicitly
+function switchTab(tabId, evt) {
     document.querySelectorAll('.tab-pane').forEach(tab => {
         tab.classList.remove('active');
     });
     
-    // Remove active class from all tab buttons
     document.querySelectorAll('.results-tabs .tab-btn').forEach(btn => {
         btn.classList.remove('active');
     });
     
-    // Show selected tab
     document.getElementById(tabId).classList.add('active');
-    
-    // Activate corresponding button
-    event.currentTarget.classList.add('active');
+
+    const e = evt || window.event;
+    if (e && e.currentTarget) {
+        e.currentTarget.classList.add('active');
+    }
 }
 
 // Socket.IO events
@@ -555,6 +544,10 @@ function setupSocketEvents() {
     
     socket.on('transcript_update', (data) => {
         const transcriptDiv = document.getElementById('transcript');
+        // Remove placeholder on first entry
+        const placeholder = transcriptDiv.querySelector('.placeholder');
+        if (placeholder) placeholder.remove();
+
         const newEntry = document.createElement('div');
         newEntry.className = 'transcript-entry';
         newEntry.innerHTML = `<strong>[${data.timestamp}]</strong> ${data.text}`;
