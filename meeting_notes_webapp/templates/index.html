@@ -117,6 +117,16 @@
                 <!-- Audio Device Selection -->
                 <div class="device-selection">
                     <h3><i class="fas fa-headphones"></i> Select Audio Device</h3>
+                    <div style="margin-bottom: 15px; text-align: center;">
+                        <button class="btn-primary" onclick="autoDetectDevice()" style="margin-bottom: 10px;">
+                            <i class="fas fa-magic"></i> Auto-Detect Active Speaker
+                        </button>
+                        <p style="color: #666; font-size: 0.9rem; margin: 5px 0;">
+                            Play audio from your meeting and click to automatically select the right device
+                        </p>
+                    </div>   
+
+
                     <div class="device-list" id="deviceList">
                         <div class="loading">Loading devices...</div>
                     </div>
@@ -132,6 +142,9 @@
                     </button>
                     <button id="pauseBtn" class="btn-warning" onclick="togglePause()" disabled>
                         <i class="fas fa-pause"></i> Pause
+                    </button>
+                    <button id="resetBtn" class="btn-info" onclick="resetCapture()">
+                        <i class="fas fa-redo"></i> Reset
                     </button>
                 </div>
                 

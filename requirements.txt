@@ -1,9 +1,13 @@
 openai-whisper
 pyaudio
 openai>=1.0.0
+groq               # Groq API for AI summaries
 python-dotenv
 rich
 numpy
 flask
 flask-socketio
 flask-cors
+webrtcvad          # Voice Activity Detection
+noisereduce        # Noise reduction
+scipy   
