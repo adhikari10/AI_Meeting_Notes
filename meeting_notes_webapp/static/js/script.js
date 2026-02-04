@@ -1,4 +1,5 @@
-// Global variables
+// Complete fixed script.js with Generate Summary button
+
 let socket;
 let isRecording = false;
 let isPaused = false;
@@ -8,22 +9,15 @@ let elapsedTime = 0;
 let selectedFile = null;
 let selectedNote = null;
 
-// Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize Socket.IO
     socket = io();
-    
-    // Setup event listeners
     setupNavigation();
     setupFileUpload();
     loadAudioDevices();
     setupSocketEvents();
-    
-    // Show home section by default
     switchSection('home');
 });
 
-// Navigation
 function setupNavigation() {
     const navLinks = document.querySelectorAll('.nav-link');
     navLinks.forEach(link => {
@@ -32,11 +26,9 @@ function setupNavigation() {
             const target = this.getAttribute('href').substring(1);
             switchSection(target);
             
-            // Update active nav link
             navLinks.forEach(l => l.classList.remove('active'));
             this.classList.add('active');
 
-            // FIX 6: Load notes when the user navigates to the notes section
             if (target === 'notes') {
                 loadNotes();
             }
@@ -52,18 +44,14 @@ function switchSection(sectionId) {
     document.getElementById(sectionId).classList.add('active');
     window.location.hash = sectionId;
 
-    // FIX 7: Also trigger loadNotes if navigating programmatically (e.g. feature card button)
     if (sectionId === 'notes') {
         loadNotes();
     }
 }
 
-// Audio Capture
-// FIX 8: selectOption now receives the event explicitly instead of relying on the global `event`
 function selectOption(option, evt) {
     const cards = document.querySelectorAll('.option-card');
     cards.forEach(card => card.classList.remove('selected'));
-    // Use evt if passed, otherwise fall back to window.event for legacy support
     const e = evt || window.event;
     if (e && e.currentTarget) {
         e.currentTarget.classList.add('selected');
@@ -95,10 +83,17 @@ async function loadAudioDevices() {
 }
 
 function selectDevice(deviceId, element) {
-    document.querySelectorAll('.device-item').forEach(item => {
-        item.classList.remove('selected');
-    });
-    element.classList.add('selected');
+    // Toggle selection - if already selected, unselect it
+    if (element.classList.contains('selected')) {
+        element.classList.remove('selected');
+    } else {
+        // Unselect all other devices
+        document.querySelectorAll('.device-item').forEach(item => {
+            item.classList.remove('selected');
+        });
+        // Select this device
+        element.classList.add('selected');
+    }
 }
 
 function startRecording() {
@@ -132,21 +127,58 @@ function startRecording() {
     const statusDot = document.querySelector('.status-dot');
     statusDot.classList.add('recording');
     document.querySelector('#statusIndicator span').textContent = 'Recording...';
+    
+    // Clear previous content
+    document.getElementById('transcript').innerHTML = '<div class="placeholder">Transcript will appear here...</div>';
+    document.getElementById('analysis').innerHTML = '<div class="placeholder">Recording... Click Stop to generate summary</div>';
 }
 
 function stopRecording() {
     socket.emit('stop_recording');
-    
+
     isRecording = false;
     document.getElementById('startBtn').disabled = false;
     document.getElementById('stopBtn').disabled = true;
     document.getElementById('pauseBtn').disabled = true;
-    
+
     stopTimer();
-    
+
     const statusDot = document.querySelector('.status-dot');
     statusDot.classList.remove('recording', 'paused');
     document.querySelector('#statusIndicator span').textContent = 'Recording stopped';
+}
+
+function resetCapture() {
+    // Stop recording if active
+    if (isRecording) {
+        stopRecording();
+    }
+
+    // Reset backend transcript
+    socket.emit('reset_transcript');
+
+    // Reset UI elements
+    document.getElementById('transcript').innerHTML = '<div class="placeholder">Transcript will appear here...</div>';
+    document.getElementById('analysis').innerHTML = '<div class="placeholder">AI insights will appear here...</div>';
+
+    // Reset timer
+    stopTimer();
+    elapsedTime = 0;
+    document.getElementById('timer').textContent = '00:00:00';
+
+    // Reset status
+    const statusDot = document.querySelector('.status-dot');
+    statusDot.classList.remove('recording', 'paused');
+    document.querySelector('#statusIndicator span').textContent = 'Ready to record';
+
+    // Reset buttons
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('stopBtn').disabled = true;
+    document.getElementById('pauseBtn').disabled = true;
+    isPaused = false;
+    document.getElementById('pauseBtn').innerHTML = '<i class="fas fa-pause"></i> Pause';
+
+    console.log('✅ Capture reset complete');
 }
 
 function togglePause() {
@@ -205,7 +237,122 @@ function formatTime(milliseconds) {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-// File Upload
+// NEW: Generate summary on demand
+async function generateLiveSummary() {
+    const analysisDiv = document.getElementById('analysis');
+    analysisDiv.innerHTML = '<div class="loading">🤖 Generating AI summary... This may take 10-30 seconds.</div>';
+    
+    try {
+        const response = await fetch('/api/generate-summary', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                provider: 'groq'
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Summary generation failed');
+        }
+        
+        const result = await response.json();
+        
+        // Display summary
+        analysisDiv.innerHTML = '';
+        
+        if (result.summary) {
+            const summary = document.createElement('div');
+            summary.className = 'analysis-item';
+            summary.innerHTML = `<strong>📝 Summary:</strong><br>${result.summary}`;
+            analysisDiv.appendChild(summary);
+        }
+        
+        if (result.key_points && result.key_points.length > 0) {
+            const points = document.createElement('div');
+            points.className = 'analysis-item';
+            points.innerHTML = `<strong>🔑 Key Points:</strong><br>${result.key_points.map(p => `• ${p}`).join('<br>')}`;
+            analysisDiv.appendChild(points);
+        }
+        
+        if (result.actions && result.actions.length > 0) {
+            const actions = document.createElement('div');
+            actions.className = 'analysis-item';
+            actions.innerHTML = `<strong>✅ Action Items:</strong><br>${result.actions.map(a => `• ${a}`).join('<br>')}`;
+            analysisDiv.appendChild(actions);
+        }
+        
+        if (result.decisions && result.decisions.length > 0) {
+            const decisions = document.createElement('div');
+            decisions.className = 'analysis-item';
+            decisions.innerHTML = `<strong>🎯 Decisions:</strong><br>${result.decisions.map(d => `• ${d}`).join('<br>')}`;
+            analysisDiv.appendChild(decisions);
+        }
+        
+        // Success message
+        const successMsg = document.createElement('div');
+        successMsg.className = 'analysis-item';
+        successMsg.style.color = '#4CAF50';
+        successMsg.innerHTML = `<strong>✅ Summary saved!</strong> Check "My Notes" section to download.`;
+        analysisDiv.appendChild(successMsg);
+        
+    } catch (error) {
+        analysisDiv.innerHTML = `
+            <div class="analysis-item" style="color: #f44336;">
+                <strong>❌ Error:</strong> ${error.message}
+                <br><br>
+                <button class="btn-primary" onclick="generateLiveSummary()">
+                    <i class="fas fa-redo"></i> Try Again
+                </button>
+            </div>
+        `;
+    }
+}
+
+function setupSocketEvents() {
+    socket.on('connect', () => {
+        console.log('Connected to server');
+    });
+    
+    socket.on('transcript_update', (data) => {
+        const transcriptDiv = document.getElementById('transcript');
+        const placeholder = transcriptDiv.querySelector('.placeholder');
+        if (placeholder) placeholder.remove();
+
+        const newEntry = document.createElement('div');
+        newEntry.className = 'transcript-entry';
+        newEntry.innerHTML = `<strong>[${data.timestamp}]</strong> ${data.text}`;
+        transcriptDiv.appendChild(newEntry);
+        transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+    });
+    
+    socket.on('recording_complete', (data) => {
+        const analysisDiv = document.getElementById('analysis');
+        analysisDiv.innerHTML = `
+            <div class="analysis-item" style="text-align: center; padding: 30px;">
+                <p style="font-size: 1.1rem; margin-bottom: 20px;">${data.message}</p>
+                <button class="btn-primary" onclick="generateLiveSummary()" style="font-size: 1rem; padding: 12px 24px;">
+                    <i class="fas fa-magic"></i> Generate AI Summary
+                </button>
+            </div>
+        `;
+    });
+    
+    socket.on('recording_status', (data) => {
+        const statusSpan = document.querySelector('#statusIndicator span');
+        if (statusSpan) {
+            statusSpan.textContent = data.status;
+        }
+    });
+    
+    socket.on('error', (data) => {
+        alert('Error: ' + data.message);
+    });
+}
+
+// File Upload Functions
 function setupFileUpload() {
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
@@ -244,6 +391,18 @@ function handleFile(file) {
         return;
     }
     
+    const maxSize = 500 * 1024 * 1024;
+    if (file.size > maxSize) {
+        alert(`File is too large! Maximum size is 500MB.\n\nYour file: ${formatFileSize(file.size)}\n\nPlease compress your video or extract audio only.`);
+        return;
+    }
+    
+    if (file.size > 100 * 1024 * 1024) {
+        if (!confirm(`This file is ${formatFileSize(file.size)}. Processing may take several minutes. Continue?`)) {
+            return;
+        }
+    }
+    
     selectedFile = file;
     
     document.getElementById('fileName').textContent = file.name;
@@ -256,7 +415,7 @@ function handleFile(file) {
         <i class="fas fa-check-circle" style="color: #4CAF50;"></i>
         <h3>File selected</h3>
         <p>${file.name}</p>
-        <p class="file-types">Ready to process</p>
+        <p class="file-types">Ready to process (${formatFileSize(file.size)})</p>
     `;
 }
 
@@ -471,7 +630,6 @@ async function loadNoteDetails(noteId) {
     }
 }
 
-// FIX 9: switchDetailTab and switchTab now receive evt explicitly — no more reliance on bare global `event`
 function switchDetailTab(tabId, evt) {
     document.querySelectorAll('.detail-pane').forEach(tab => {
         tab.classList.remove('active');
@@ -518,7 +676,6 @@ async function deleteSelectedNote() {
     }
 }
 
-// FIX 10: switchTab also receives evt explicitly
 function switchTab(tabId, evt) {
     document.querySelectorAll('.tab-pane').forEach(tab => {
         tab.classList.remove('active');
@@ -535,53 +692,57 @@ function switchTab(tabId, evt) {
         e.currentTarget.classList.add('active');
     }
 }
+async function autoDetectDevice() {
+    const btn = event.target;
+    const originalText = btn.innerHTML;
 
-// Socket.IO events
-function setupSocketEvents() {
-    socket.on('connect', () => {
-        console.log('Connected to server');
-    });
-    
-    socket.on('transcript_update', (data) => {
-        const transcriptDiv = document.getElementById('transcript');
-        // Remove placeholder on first entry
-        const placeholder = transcriptDiv.querySelector('.placeholder');
-        if (placeholder) placeholder.remove();
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Detecting... (Play some audio now)';
+    btn.disabled = true;
 
-        const newEntry = document.createElement('div');
-        newEntry.className = 'transcript-entry';
-        newEntry.innerHTML = `<strong>[${data.timestamp}]</strong> ${data.text}`;
-        transcriptDiv.appendChild(newEntry);
-        transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
-    });
-    
-    socket.on('analysis_update', (data) => {
-        const analysisDiv = document.getElementById('analysis');
-        analysisDiv.innerHTML = '';
-        
-        if (data.summary) {
-            const summary = document.createElement('div');
-            summary.className = 'analysis-item';
-            summary.innerHTML = `<strong>📝 Summary:</strong> ${data.summary}`;
-            analysisDiv.appendChild(summary);
+    try {
+        const response = await fetch('/api/auto-detect-device');
+        const result = await response.json();
+
+        if (result.success) {
+            const deviceList = document.getElementById('deviceList');
+            const deviceItems = Array.from(deviceList.querySelectorAll('.device-item'));
+
+            // Find the device element that corresponds to the detected device_id
+            const detectedDevice = deviceItems[result.device_id];
+
+            if (detectedDevice) {
+                // Use the selectDevice function to properly toggle/select
+                // First unselect all
+                deviceItems.forEach(item => {
+                    item.classList.remove('selected');
+                    item.style.border = '';
+                    item.style.backgroundColor = '';
+                });
+
+                // Then select the detected one
+                detectedDevice.classList.add('selected');
+                detectedDevice.style.border = '2px solid #4CAF50';
+                detectedDevice.style.backgroundColor = '#e8f5e8';
+                detectedDevice.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            btn.innerHTML = '<i class="fas fa-check-circle"></i> Device Detected!';
+            btn.style.backgroundColor = '#4CAF50';
+
+            alert(`✅ Detected: ${result.device_name}\nAudio level: ${(result.level * 100).toFixed(2)}%\n\nClick the device again to unselect if needed.`);
+
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.backgroundColor = '';
+                btn.disabled = false;
+            }, 3000);
+        } else {
+            throw new Error(result.message || 'Detection failed');
         }
-        
-        if (data.actions && data.actions.length > 0) {
-            const actions = document.createElement('div');
-            actions.className = 'analysis-item';
-            actions.innerHTML = `<strong>✅ Actions:</strong><br>${data.actions.map(a => `• ${a}`).join('<br>')}`;
-            analysisDiv.appendChild(actions);
-        }
-        
-        analysisDiv.scrollTop = analysisDiv.scrollHeight;
-    });
-    
-    socket.on('recording_status', (data) => {
-        const statusSpan = document.querySelector('#statusIndicator span');
-        statusSpan.textContent = data.status;
-    });
-    
-    socket.on('error', (data) => {
-        alert('Error: ' + data.message);
-    });
+
+    } catch (error) {
+        alert(`❌ ${error.message}\n\nTips:\n- Make sure audio is playing\n- Try adjusting volume\n- Manually select a device instead`);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
 }
