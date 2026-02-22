@@ -13,7 +13,10 @@ from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import whisper
 from openai import OpenAI
-import pyaudio
+try:
+    import pyaudiowpatch as pyaudio
+except ImportError:
+    import pyaudio
 import numpy as np
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
