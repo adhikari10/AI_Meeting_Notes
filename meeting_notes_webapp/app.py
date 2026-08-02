@@ -90,15 +90,6 @@ audio_stream = None
 live_transcript = []
 audio_buffer = []   # (chunk_index, timestamp, audio_np) tuples — for post-recording diarization
 
-# Translator state
-translator_active = False
-translator_paused = False
-translator_thread = None
-
-# NLLB translation model (lazy-loaded on first translator request)
-nllb_tokenizer = None
-nllb_model = None
-
 class BasicNoiseFilter:
     """Basic noise filtering without external libraries"""
 
@@ -261,27 +252,11 @@ class MeetingAssistant:
 
         print(f"✅ Available AI providers: {list(self.providers.keys())}")
     
-    def is_gibberish(self, text: str, detected_language: str = None) -> bool:
-        """Return True if *text* looks like a Whisper hallucination or noise artefact.
-
-        Pass detected_language (Whisper ISO code, e.g. 'hi', 'zh', 'ru') so that
-        checks based on Latin-script assumptions are skipped for non-Latin scripts.
-        """
+    def is_gibberish(self, text: str) -> bool:
+        """Return True if *text* looks like a Whisper hallucination or noise artefact."""
         import re
 
-        # Languages whose scripts are entirely or mostly non-ASCII / non-Latin.
-        # For these we skip the ASCII-ratio and [a-zA-Z] word checks — they are
-        # meaningless and would incorrectly flag every utterance as gibberish.
-        NON_LATIN_LANGS = {
-            'hi', 'zh', 'ar', 'ja', 'ko', 'ru', 'uk', 'he', 'fa',
-            'th', 'ta', 'te', 'bn', 'ur', 'mn', 'am', 'si', 'my',
-            'km', 'lo', 'gu', 'ml', 'mr', 'ne', 'pa', 'ka', 'hy',
-            'bg', 'mk', 'sr', 'be',
-        }
-        is_non_latin = (detected_language or '').lower() in NON_LATIN_LANGS
-
-        # 0. Universal heavy-repetition check — catches "पर पर पर पर…" loops.
-        #    Apply to ALL languages before any script-specific logic.
+        # 0. Heavy-repetition check — catches word loops.
         words = text.split()
         if len(words) > 8:
             unique_ratio = len(set(words)) / len(words)
@@ -289,35 +264,26 @@ class MeetingAssistant:
                 print(f"⚠️  Gibberish (word loop, unique ratio {unique_ratio:.0%}): '{text[:60]}'")
                 return True
 
-        if not is_non_latin:
-            # 1. Non-ASCII ratio — only meaningful for Latin-script languages
-            non_ascii = sum(1 for c in text if ord(c) > 127)
-            if len(text) > 0 and non_ascii / len(text) > 0.15:
-                print(f"⚠️  Gibberish (non-ASCII ratio {non_ascii/len(text):.0%}): '{text}'")
+        # 1. Non-ASCII ratio
+        non_ascii = sum(1 for c in text if ord(c) > 127)
+        if len(text) > 0 and non_ascii / len(text) > 0.15:
+            print(f"⚠️  Gibberish (non-ASCII ratio {non_ascii/len(text):.0%}): '{text}'")
+            return True
+
+        # 2. Real-word ratio
+        tokens = words  # already split above
+        if tokens:
+            real_words = sum(1 for t in tokens if re.search(r'[a-zA-Z]', t))
+            if real_words / len(tokens) < 0.5:
+                print(f"⚠️  Gibberish (real-word ratio {real_words/len(tokens):.0%}): '{text}'")
                 return True
 
-            # 2. Real-word ratio — only meaningful for Latin-script languages
-            tokens = words  # already split above
-            if tokens:
-                real_words = sum(1 for t in tokens if re.search(r'[a-zA-Z]', t))
-                if real_words / len(tokens) < 0.5:
-                    print(f"⚠️  Gibberish (real-word ratio {real_words/len(tokens):.0%}): '{text}'")
-                    return True
-
-            # 3. Repetition — unique-word ratio below 30 % for longer utterances
-            if len(tokens) >= 6:
-                unique_ratio = len(set(t.lower() for t in tokens)) / len(tokens)
-                if unique_ratio < 0.30:
-                    print(f"⚠️  Gibberish (repetition, unique ratio {unique_ratio:.0%}): '{text}'")
-                    return True
-
-        else:
-            # For non-Latin scripts: looser repetition check only
-            if len(words) >= 6:
-                unique_ratio = len(set(words)) / len(words)
-                if unique_ratio < 0.30:
-                    print(f"⚠️  Gibberish (non-Latin repetition, unique ratio {unique_ratio:.0%}): '{text[:60]}'")
-                    return True
+        # 3. Repetition — unique-word ratio below 30 % for longer utterances
+        if len(tokens) >= 6:
+            unique_ratio = len(set(t.lower() for t in tokens)) / len(tokens)
+            if unique_ratio < 0.30:
+                print(f"⚠️  Gibberish (repetition, unique ratio {unique_ratio:.0%}): '{text}'")
+                return True
 
         # 4. Known Whisper hallucination phrases (mostly English — always apply)
         HALLUCINATION_PHRASES = [
@@ -993,10 +959,6 @@ def home():
 def meeting():
     return render_template('meeting.html')
 
-@app.route('/translator')
-def translator():
-    return render_template('translator.html')
-
 @app.route('/api/devices')
 def get_devices():
     try:
@@ -1521,10 +1483,6 @@ Generated by Smart Meeting Notes
 def handle_start_recording(data):
     global recording_active, recording_paused, recording_thread, live_transcript, audio_buffer
 
-    if translator_active:
-        emit('error', {'message': 'Translator is running. Stop it first.'})
-        return
-
     if recording_active:
         emit('error', {'message': 'Recording already in progress'})
         return
@@ -1586,299 +1544,6 @@ def handle_reset_transcript():
     live_transcript = []
     print("🔄 Transcript reset by user")
     emit('recording_status', {'status': 'Ready to record'})
-
-@socketio.on('start_translator')
-def handle_start_translator(data):
-    global recording_active, translator_active, translator_paused, translator_thread
-
-    if recording_active:
-        emit('translator_error', {'message': 'Meeting recording is in progress. Stop it first.'})
-        return
-
-    if translator_active:
-        emit('translator_error', {'message': 'Translator already running'})
-        return
-
-    translator_active = True
-    translator_paused = False
-
-    translator_thread = threading.Thread(
-        target=run_translator,
-        args=(data.get('deviceId', 0), data.get('sourceLang', 'auto'), data.get('targetLang', 'English'))
-    )
-    translator_thread.daemon = True
-    translator_thread.start()
-
-    emit('translator_status', {'status': 'Translator started'})
-
-
-@socketio.on('stop_translator')
-def handle_stop_translator():
-    global translator_active
-    translator_active = False
-    emit('translator_status', {'status': 'Translator stopped'})
-
-
-@socketio.on('pause_translator')
-def handle_pause_translator():
-    global translator_paused
-    translator_paused = True
-    emit('translator_status', {'status': 'Paused'})
-
-
-@socketio.on('resume_translator')
-def handle_resume_translator():
-    global translator_paused
-    translator_paused = False
-    emit('translator_status', {'status': 'Translating...'})
-
-
-@socketio.on('save_translator_note')
-def handle_save_translator_note(data):
-    try:
-        segments = data.get('segments', [])
-        source_lang = data.get('sourceLang', 'Auto')
-        target_lang = data.get('targetLang', 'English')
-
-        original_text = '\n'.join(
-            f"[{s.get('timestamp', '')}] {s.get('original', '')}" for s in segments
-        )
-        translated_text = '\n'.join(
-            f"[{s.get('timestamp', '')}] {s.get('translated', '')}" for s in segments
-        )
-
-        notes_data = {
-            "title": f"Translation {source_lang}→{target_lang} — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-            "timestamp": datetime.now().isoformat(),
-            "source": "translator",
-            "source_language": source_lang,
-            "target_language": target_lang,
-            "transcript": original_text,
-            "translated_transcript": translated_text,
-            "summary": f"Live translation session from {source_lang} to {target_lang}. {len(segments)} segments captured.",
-            "actions": [],
-            "decisions": [],
-            "key_points": [],
-            "segments": segments
-        }
-
-        filename = assistant.save_notes(notes_data, "translator")
-        emit('translator_note_saved', {'filename': filename, 'success': True})
-
-    except Exception as e:
-        print(f"❌ Save translator note error: {e}")
-        emit('translator_error', {'message': f'Failed to save: {str(e)}'})
-
-
-# ── NLLB Language Mappings ────────────────────────────────────────────────
-
-WHISPER_TO_NLLB = {
-    "en": "eng_Latn",
-    "hi": "hin_Deva",
-    "es": "spa_Latn",
-    "fr": "fra_Latn",
-    "de": "deu_Latn",
-    "zh": "zho_Hans",
-    "ar": "arb_Arab",
-    "pt": "por_Latn",
-    "ja": "jpn_Jpan",
-    "ko": "kor_Hang",
-    "it": "ita_Latn",
-    "ru": "rus_Cyrl",
-    "tr": "tur_Latn",
-    "nl": "nld_Latn",
-    "ne": "npi_Deva",
-    "bn": "ben_Beng",
-    "ur": "urd_Arab",
-    "pa": "pan_Guru",
-}
-
-LANGUAGE_NAMES = {
-    "en": "English", "hi": "Hindi", "es": "Spanish",
-    "fr": "French", "de": "German", "zh": "Chinese",
-    "ar": "Arabic", "pt": "Portuguese", "ja": "Japanese",
-    "ko": "Korean", "it": "Italian", "ru": "Russian",
-    "tr": "Turkish", "nl": "Dutch", "ne": "Nepali",
-    "bn": "Bengali", "ur": "Urdu", "pa": "Punjabi",
-}
-
-
-def get_nllb_model():
-    global nllb_tokenizer, nllb_model
-    if nllb_model is None:
-        print("🔄 Loading NLLB-200 translation model...")
-        from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-        nllb_tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
-        nllb_model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
-        print("✅ NLLB-200 loaded")
-    return nllb_tokenizer, nllb_model
-
-
-def translate_with_nllb(text, src_lang_whisper, tgt_lang_whisper):
-    if not text or not text.strip():
-        return text
-    if src_lang_whisper == tgt_lang_whisper:
-        return text
-
-    src_nllb = WHISPER_TO_NLLB.get(src_lang_whisper)
-    tgt_nllb = WHISPER_TO_NLLB.get(tgt_lang_whisper)
-
-    if not src_nllb or not tgt_nllb:
-        print(f"⚠️ Unsupported language pair: {src_lang_whisper} → {tgt_lang_whisper}")
-        return text
-
-    try:
-        tokenizer, model = get_nllb_model()
-
-        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
-
-        target_lang_id = tokenizer.convert_tokens_to_ids(tgt_nllb)
-
-        translated_tokens = model.generate(
-            **inputs,
-            forced_bos_token_id=target_lang_id,
-            max_length=512
-        )
-
-        translated = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
-        print(f"✅ Translated [{src_lang_whisper}→{tgt_lang_whisper}]: {translated[:60]}")
-        return translated
-
-    except Exception as e:
-        print(f"❌ NLLB translation error: {e}")
-        return text
-
-
-def translate_text(text, source_lang, target_lang):
-    """Translate text via Groq. Returns original on error or same-language shortcut."""
-    if source_lang != 'auto' and source_lang == target_lang:
-        return text
-    if 'groq' not in assistant.providers:
-        return text
-    try:
-        src_label = f"from {source_lang}" if source_lang != 'auto' else ""
-        prompt = (
-            f"Translate the following text {src_label} to {target_lang}. "
-            f"Return ONLY the translated text, no explanations:\n\n{text}"
-        )
-        client = assistant.providers['groq']
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        f"You are a professional translator. Translate accurately to {target_lang}. "
-                        "Return ONLY the translation, nothing else."
-                    )
-                },
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=300,
-            temperature=0.1
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"⚠️ Translation error: {e}")
-        return text
-
-
-def run_translator(device_id, source_lang, target_lang):
-    global translator_active, translator_paused
-
-    # Frontend now sends ISO codes directly (e.g. 'en', 'hi', 'auto')
-    whisper_lang = None if source_lang == 'auto' else source_lang
-    target_lang_code = target_lang
-
-    print(f"\n🌐 Starting translator: {source_lang} → {target_lang} ({target_lang_code}) (device {device_id})")
-
-    p = pyaudio.PyAudio()
-    stream = None
-
-    try:
-        stream = p.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=16000,
-            input=True,
-            input_device_index=device_id,
-            frames_per_buffer=16000 * 5
-        )
-
-        print("✅ Translator audio stream opened")
-
-        while translator_active:
-            if translator_paused:
-                time.sleep(0.1)
-                continue
-
-            audio_data = stream.read(16000 * 5, exception_on_overflow=False)
-            audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
-
-            if np.mean(np.abs(audio_np)) < 0.002:
-                continue
-
-            if not assistant.whisper_model:
-                continue
-
-            transcribe_kwargs = {
-                'fp16': False,
-                'temperature': 0.0,
-                'condition_on_previous_text': False,
-            }
-            if whisper_lang:
-                transcribe_kwargs['language'] = whisper_lang
-
-            result = assistant.whisper_model.transcribe(audio_np, **transcribe_kwargs)
-            original = result['text'].strip()
-            detected_lang = result.get('language', source_lang)
-
-            print(f"🔍 Whisper detected language: '{detected_lang}', text: '{original[:60]}'")
-
-            if not original or len(original) < 3:
-                continue
-
-            if assistant.is_gibberish(original, detected_language=detected_lang):
-                print(f"⚠️  Translator: gibberish filtered for lang='{detected_lang}'")
-                continue
-
-            # Translate using local NLLB model (no API key needed)
-            was_translated = False
-            translated = original
-            if detected_lang != target_lang_code:
-                translated = translate_with_nllb(original, detected_lang, target_lang_code)
-                was_translated = True
-
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            print(f"📤 Emitting translator_update [{detected_lang}→{target_lang_code}]: {translated[:50]}")
-
-            socketio.emit('translator_update', {
-                'original': original,
-                'translated': translated,
-                'source_lang': detected_lang,
-                'source_lang_name': LANGUAGE_NAMES.get(detected_lang, detected_lang),
-                'target_lang': target_lang_code,
-                'was_translated': was_translated,
-                'speaker': '',
-                'timestamp': timestamp,
-            })
-
-            time.sleep(0.1)
-
-    except Exception as e:
-        print(f"❌ Translator error: {e}")
-        import traceback
-        traceback.print_exc()
-        socketio.emit('translator_error', {'message': str(e)})
-
-    finally:
-        if stream:
-            stream.stop_stream()
-            stream.close()
-        p.terminate()
-        print("✅ Translator stopped cleanly")
-        socketio.emit('translator_stopped', {})
-
 
 def record_audio(device_id, capture_type):
     global recording_active, recording_paused, audio_stream, live_transcript, audio_buffer
