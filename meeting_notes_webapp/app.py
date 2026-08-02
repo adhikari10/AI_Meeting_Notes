@@ -1,6 +1,7 @@
 # Safe fallback version - works even without VAD libraries
 
 import os
+import uuid
 os.environ["PATH"] = r"C:\ProgramData\chocolatey\bin" + os.pathsep + os.environ.get("PATH", "")
 
 # CLOUD_MODE=true runs the app upload-only, for servers with no audio
@@ -1268,31 +1269,41 @@ def process_file():
             return jsonify({"error": "No file selected"}), 400
         
         filename = secure_filename(file.filename)
-        filepath = Path(app.config['UPLOAD_FOLDER']) / filename
+        unique_name = f"{uuid.uuid4().hex}_{filename}"
+        filepath = Path(app.config['UPLOAD_FOLDER']) / unique_name
         file.save(filepath)
-        
-        options = {
-            'generateSummary': request.form.get('generateSummary') == 'true',
-            'model': request.form.get('model', 'groq')
-        }
-        
-        result = assistant.process_file(str(filepath), options)
-        
-        notes_data = {
-            "title": filename,
-            "timestamp": datetime.now().isoformat(),
-            "source": "upload",
-            "duration": f"{round(result.get('duration_seconds', 0) / 60, 1)} min"
-                        if result.get('duration_seconds') else "N/A",
-            **result
-        }
-        
-        notes_file = assistant.save_notes(notes_data, "upload")
-        
-        return jsonify({
-            **result,
-            "notes_file": notes_file
-        })
+
+        try:
+            options = {
+                'generateSummary': request.form.get('generateSummary') == 'true',
+                'model': request.form.get('model', 'groq')
+            }
+
+            result = assistant.process_file(str(filepath), options)
+
+            notes_data = {
+                "title": filename,
+                "timestamp": datetime.now().isoformat(),
+                "source": "upload",
+                "duration": f"{round(result.get('duration_seconds', 0) / 60, 1)} min"
+                            if result.get('duration_seconds') else "N/A",
+                **result
+            }
+
+            notes_file = assistant.save_notes(notes_data, "upload")
+
+            return jsonify({
+                **result,
+                "notes_file": notes_file
+            })
+        finally:
+            # Cloud deployments don't retain uploaded audio — the transcript/
+            # note is already saved by this point, so a stuck file here isn't
+            # worth failing the request over.
+            try:
+                filepath.unlink(missing_ok=True)
+            except Exception as e:
+                print(f"⚠️  Failed to delete uploaded file {filepath}: {e}")
         
     except Exception as e:
         import traceback
@@ -1392,7 +1403,7 @@ def process_url():
             return jsonify({"error": "Invalid URL — must start with http:// or https://"}), 400
 
         upload_dir = Path(app.config['UPLOAD_FOLDER'])
-        output_template = str(upload_dir / '%(title)s.%(ext)s')
+        output_template = str(upload_dir / f'{uuid.uuid4().hex}_%(title)s.%(ext)s')
 
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -1427,36 +1438,39 @@ def process_url():
             'message': f'Transcribing: {video_title}...'
         })
 
-        options = {
-            'generateSummary': data.get('generateSummary', True),
-            'model': data.get('model', 'groq')
-        }
-
-        result = assistant.process_file(str(audio_path), options)
-
-        notes_data = {
-            "title": video_title,
-            "timestamp": datetime.now().isoformat(),
-            "source": "url",
-            "url": url,
-            "duration": duration,
-            **result
-        }
-
-        notes_file = assistant.save_notes(notes_data, "url")
-
-        # Clean up the downloaded file
         try:
-            audio_path.unlink()
-        except Exception:
-            pass
+            options = {
+                'generateSummary': data.get('generateSummary', True),
+                'model': data.get('model', 'groq')
+            }
 
-        return jsonify({
-            **result,
-            "title": video_title,
-            "duration": duration,
-            "notes_file": notes_file
-        })
+            result = assistant.process_file(str(audio_path), options)
+
+            notes_data = {
+                "title": video_title,
+                "timestamp": datetime.now().isoformat(),
+                "source": "url",
+                "url": url,
+                "duration": duration,
+                **result
+            }
+
+            notes_file = assistant.save_notes(notes_data, "url")
+
+            return jsonify({
+                **result,
+                "title": video_title,
+                "duration": duration,
+                "notes_file": notes_file
+            })
+        finally:
+            # Cloud deployments don't retain downloaded audio — the transcript/
+            # note is already saved by this point, so a stuck file here isn't
+            # worth failing the request over.
+            try:
+                audio_path.unlink(missing_ok=True)
+            except Exception as e:
+                print(f"⚠️  Failed to delete downloaded audio {audio_path}: {e}")
 
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e)

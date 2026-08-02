@@ -90,3 +90,4 @@ Desktop.ini
 backend/meeting_notes/
 meeting_notes_webapp/notes/
 meeting_notes_webapp/uploads/
+.claude/
