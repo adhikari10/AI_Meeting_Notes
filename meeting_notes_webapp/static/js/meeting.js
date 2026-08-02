@@ -15,10 +15,20 @@ let chatHistory = [];
 let currentChatNoteId = null;
 
 document.addEventListener('DOMContentLoaded', function() {
+    if (window.STANDALONE_NOTE_ID) {
+        // Standalone /notes/<id> page — just load that one note, skip all
+        // the recording-page setup (no capture UI, notes grid, etc. here).
+        selectedNote = window.STANDALONE_NOTE_ID;
+        loadNoteDetails(window.STANDALONE_NOTE_ID);
+        return;
+    }
+
     socket = io();
     setupNavigation();
     setupFileUpload();
-    loadAudioDevices();
+    if (!window.CLOUD_MODE) {
+        loadAudioDevices();
+    }
     setupSocketEvents();
     switchSection('capture');   // default to capture (no home section here)
 });
@@ -100,6 +110,11 @@ function selectDevice(deviceId, element) {
 }
 
 function startRecording() {
+    if (window.CLOUD_MODE) {
+        alert('Live recording is not available in cloud mode. Use Upload or paste a video URL instead.');
+        return;
+    }
+
     const selectedOption = document.querySelector('input[name="captureOption"]:checked');
     if (!selectedOption) {
         alert('Please select a capture option first!');
@@ -686,34 +701,38 @@ async function loadNotes() {
         }
 
         notes.forEach(note => {
-            const noteElement = document.createElement('div');
-            noteElement.className = 'note-card';
-            noteElement.innerHTML = `
+            // A real <a target="_blank"> so ctrl/cmd/middle-click all work
+            // the normal browser way — the note opens in its own tab on
+            // /notes/<id>, keeping this list untouched.
+            const noteLink = document.createElement('a');
+            noteLink.className = 'note-card';
+            noteLink.href = `/notes/${encodeURIComponent(note.id)}`;
+            noteLink.target = '_blank';
+            noteLink.rel = 'noopener noreferrer';
+            noteLink.innerHTML = `
+                <button type="button" class="note-delete-btn" title="Delete note" aria-label="Delete note">
+                    <i class="fas fa-trash"></i>
+                </button>
                 <div class="note-header">
-                    <div class="note-title">${note.title}</div>
-                    <div class="note-date">${note.date}</div>
+                    <div class="note-title">${escapeHtml(note.title)}</div>
+                    <div class="note-date">${escapeHtml(note.date)}</div>
                 </div>
-                <div class="note-preview">${note.preview}</div>
+                <div class="note-preview">${escapeHtml(note.preview)}</div>
                 <div class="note-meta">
-                    <span><i class="fas fa-clock"></i> ${note.duration}</span>
-                    <span><i class="fas fa-file"></i> ${note.type}</span>
+                    <span><i class="fas fa-clock"></i> ${escapeHtml(note.duration)}</span>
+                    <span><i class="fas fa-file"></i> ${escapeHtml(note.type)}</span>
                 </div>
             `;
-            noteElement.addEventListener('click', () => selectNote(note.id, noteElement));
-            notesGrid.appendChild(noteElement);
+            noteLink.querySelector('.note-delete-btn').addEventListener('click', (evt) => {
+                evt.preventDefault();
+                evt.stopPropagation();
+                deleteNoteFromCard(note.id, noteLink);
+            });
+            notesGrid.appendChild(noteLink);
         });
     } catch (error) {
         console.error('Error loading notes:', error);
     }
-}
-
-function selectNote(noteId, element) {
-    document.querySelectorAll('.note-card').forEach(card => {
-        card.classList.remove('selected');
-    });
-    element.classList.add('selected');
-    selectedNote = noteId;
-    loadNoteDetails(noteId);
 }
 
 async function loadNoteDetails(noteId) {
@@ -738,6 +757,12 @@ async function loadNoteDetails(noteId) {
     try {
         const response = await fetch(`/api/notes/${noteId}`);
         const note = await response.json();
+
+        if (!response.ok) {
+            document.getElementById('detailTitle').textContent = note.error || 'Note not found';
+            document.getElementById('noteDetails').style.display = 'block';
+            return;
+        }
 
         document.getElementById('detailTitle').textContent = note.title || 'Meeting Notes';
         document.getElementById('detailDate').textContent = note.date || 'N/A';
@@ -782,15 +807,43 @@ function downloadSelectedNote() {
     window.location.href = `/api/notes/${selectedNote}/download`;
 }
 
+async function deleteNoteFromCard(noteId, cardEl) {
+    if (!confirm('Are you sure you want to delete this note?')) return;
+
+    try {
+        const response = await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
+        if (response.ok) {
+            cardEl.remove();
+            const notesGrid = document.getElementById('notesGrid');
+            if (notesGrid && notesGrid.children.length === 0) {
+                notesGrid.innerHTML = '<div class="loading" style="border:none;">No saved notes yet.</div>';
+            }
+        } else {
+            alert('Failed to delete note.');
+        }
+    } catch (error) {
+        console.error('Error deleting note:', error);
+        alert('Failed to delete note.');
+    }
+}
+
 async function deleteSelectedNote() {
     if (!selectedNote || !confirm('Are you sure you want to delete this note?')) return;
 
     try {
         const response = await fetch(`/api/notes/${selectedNote}`, { method: 'DELETE' });
         if (response.ok) {
-            loadNotes();
-            document.getElementById('noteDetails').style.display = 'none';
             selectedNote = null;
+            if (document.getElementById('notesGrid')) {
+                // On the My Notes page — refresh the grid.
+                loadNotes();
+                document.getElementById('noteDetails').style.display = 'none';
+            } else {
+                // Standalone /notes/<id> tab — nothing to refresh, just say so.
+                document.getElementById('detailTitle').textContent = 'Note deleted';
+                document.getElementById('noteDetails').querySelector('.note-content-tabs').style.display = 'none';
+                document.getElementById('noteDetails').querySelector('.note-content').style.display = 'none';
+            }
         }
     } catch (error) {
         console.error('Error deleting note:', error);

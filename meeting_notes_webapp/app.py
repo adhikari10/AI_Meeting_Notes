@@ -3,6 +3,12 @@
 import os
 os.environ["PATH"] = r"C:\ProgramData\chocolatey\bin" + os.pathsep + os.environ.get("PATH", "")
 
+# CLOUD_MODE=true runs the app upload-only, for servers with no audio
+# hardware: no PyAudio/device libraries are imported or initialised, local
+# Whisper (live-mic only) isn't loaded, and the live-record UI is disabled.
+# Default (unset/false) is the existing desktop behaviour, unchanged.
+CLOUD_MODE = os.getenv("CLOUD_MODE", "false").strip().lower() == "true"
+
 import json
 import time
 import threading
@@ -13,10 +19,29 @@ from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import whisper
 from openai import OpenAI
-try:
-    import pyaudiowpatch as pyaudio
-except ImportError:
-    import pyaudio
+
+# Audio-device libraries (PyAudio / PyAudioWPatch) touch real sound hardware
+# at initialisation time — skip importing them entirely in CLOUD_MODE so a
+# server with no audio devices (or without PyAudio installed at all) still
+# boots cleanly. PYAUDIO_AVAILABLE gates every route/handler that would
+# otherwise call pyaudio.PyAudio().
+PYAUDIO_AVAILABLE = False
+pyaudio = None
+
+if CLOUD_MODE:
+    print("☁️  CLOUD_MODE enabled — skipping PyAudio (audio-device library) import")
+else:
+    try:
+        import pyaudiowpatch as pyaudio
+        PYAUDIO_AVAILABLE = True
+    except ImportError:
+        try:
+            import pyaudio
+            PYAUDIO_AVAILABLE = True
+        except ImportError as e:
+            print(f"⚠️  PyAudio not available: {e}")
+            print("   Live microphone/speaker recording will be disabled.")
+
 import numpy as np
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
@@ -59,13 +84,20 @@ ENV_PATH = BASE_DIR / '.env'
 if not _FROZEN:
     sys.path.insert(0, str(_HERE.parent / 'backend'))
 
-try:
-    from simple_speaker_detection import SimpleSpeakerDetector
-    SPEAKER_DETECTION_AVAILABLE = True
-    print("✅ Speaker detection enabled")
-except ImportError as e:
-    SPEAKER_DETECTION_AVAILABLE = False
-    print(f"⚠️  Speaker detection not available: {e}")
+# Speaker diarization (resemblyzer) is only ever used on the live-recording
+# path (post-recording diarization of audio_buffer) — never on uploaded
+# files, which go through Groq transcription instead. Safe to skip in
+# CLOUD_MODE for a lighter boot with no loss of upload functionality.
+SPEAKER_DETECTION_AVAILABLE = False
+if CLOUD_MODE:
+    print("☁️  CLOUD_MODE enabled — skipping speaker-detection (resemblyzer) import")
+else:
+    try:
+        from simple_speaker_detection import SimpleSpeakerDetector
+        SPEAKER_DETECTION_AVAILABLE = True
+        print("✅ Speaker detection enabled")
+    except ImportError as e:
+        print(f"⚠️  Speaker detection not available: {e}")
 
 try:
     from transcription_providers import GroqTranscriptionProvider, probe_duration
@@ -89,6 +121,12 @@ Path(app.config['NOTES_FOLDER']).mkdir(exist_ok=True)
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 CORS(app)
+
+
+@app.context_processor
+def inject_cloud_mode():
+    return {'cloud_mode': CLOUD_MODE}
+
 
 recording_active = False
 recording_paused = False
@@ -193,13 +231,22 @@ class MeetingAssistant:
     def __init__(self):
         print("Loading AI models...")
         
-        try:
-            _whisper_size = os.getenv("WHISPER_MODEL", "base")
-            self.whisper_model = whisper.load_model(_whisper_size)
-            print(f"✅ Whisper model loaded ({_whisper_size})")
-        except Exception as e:
-            print(f"❌ Whisper loading error: {e}")
+        # Local Whisper is only used by live-mic transcription
+        # (transcribe_audio(), called from the PyAudio recording thread).
+        # File/URL uploads always go through Groq (transcription_provider)
+        # regardless of mode, so skipping this load in CLOUD_MODE doesn't
+        # affect the upload path — it just avoids loading an unused model.
+        if CLOUD_MODE:
+            print("☁️  CLOUD_MODE enabled — skipping local Whisper model load (live recording only)")
             self.whisper_model = None
+        else:
+            try:
+                _whisper_size = os.getenv("WHISPER_MODEL", "base")
+                self.whisper_model = whisper.load_model(_whisper_size)
+                print(f"✅ Whisper model loaded ({_whisper_size})")
+            except Exception as e:
+                print(f"❌ Whisper loading error: {e}")
+                self.whisper_model = None
         
         # Initialize appropriate noise processor
         # For now, use BasicNoiseFilter for better compatibility
@@ -1066,8 +1113,18 @@ def home():
 def meeting():
     return render_template('meeting.html')
 
+@app.route('/notes/<note_id>')
+def note_detail_page(note_id):
+    """Standalone page for a single note — opened in its own tab from My Notes."""
+    note_id = secure_filename(note_id)
+    note_file = Path(app.config['NOTES_FOLDER']) / f"{note_id}.json"
+    found = note_file.exists()
+    return render_template('note_detail.html', note_id=note_id, not_found=not found), (200 if found else 404)
+
 @app.route('/api/devices')
 def get_devices():
+    if CLOUD_MODE or not PYAUDIO_AVAILABLE:
+        return jsonify([])
     try:
         p = pyaudio.PyAudio()
         devices = []
@@ -1091,6 +1148,11 @@ def get_devices():
 @app.route('/api/auto-detect-device')
 def auto_detect_device():
     """Detect which audio device is currently receiving audio"""
+    if CLOUD_MODE or not PYAUDIO_AVAILABLE:
+        return jsonify({
+            "success": False,
+            "message": "Audio device detection is not available in cloud mode."
+        })
     try:
         p = pyaudio.PyAudio()
         best_device = None
@@ -1593,6 +1655,10 @@ Generated by Smart Meeting Notes
 @socketio.on('start_recording')
 def handle_start_recording(data):
     global recording_active, recording_paused, recording_thread, live_transcript, audio_buffer
+
+    if CLOUD_MODE or not PYAUDIO_AVAILABLE:
+        emit('error', {'message': 'Live recording is not available in cloud mode'})
+        return
 
     if recording_active:
         emit('error', {'message': 'Recording already in progress'})

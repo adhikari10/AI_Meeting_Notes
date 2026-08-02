@@ -100,6 +100,26 @@
 
 .section-header p { color: #666; }
 
+/* ── Cloud mode (live recording disabled) ────────────────── */
+.cloud-mode-banner {
+    background: #fff8e1;
+    border: 1px solid #ffe0a3;
+    color: #8a6100;
+    border-radius: 10px;
+    padding: 14px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.95rem;
+}
+
+.recording-controls.cloud-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    filter: grayscale(40%);
+}
+
 /* ── Capture Options ─────────────────────────────────────── */
 .capture-container { }
 
@@ -453,22 +473,63 @@
 }
 
 .note-card {
+    display: block;
+    position: relative;
     background: white;
     border-radius: 15px;
     padding: 20px;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
     cursor: pointer;
     transition: all 0.3s ease;
+    color: inherit;
+    text-decoration: none;
 }
 
-.note-card:hover    { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); }
-.note-card.selected { border: 2px solid #667eea; background: #f0f0ff; }
+.note-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); }
+
+.note-delete-btn {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.05);
+    color: #999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+    z-index: 2;
+}
+
+.note-delete-btn:hover { background: #e74c3c; color: white; }
+
+/* ── Standalone note page (/notes/<id>) ──────────────────── */
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 20px;
+    margin-bottom: 10px;
+    transition: background 0.2s ease;
+}
+
+.back-link:hover { background: rgba(255, 255, 255, 0.3); }
 
 .note-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15px;
+    padding-right: 34px;
 }
 
 .note-title   { font-weight: 600; color: #333; }

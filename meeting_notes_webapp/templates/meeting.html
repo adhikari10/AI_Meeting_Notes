@@ -34,10 +34,18 @@
                 <p>Record meetings in real-time and get instant AI analysis</p>
             </div>
 
+            {% if cloud_mode %}
+            <div class="cloud-mode-banner">
+                <i class="fas fa-cloud"></i>
+                Live recording — coming soon. Use Upload or paste a video URL below to get a transcript and summary.
+            </div>
+            {% endif %}
+
             <div class="capture-container">
+                <div class="recording-controls{% if cloud_mode %} cloud-disabled{% endif %}">
                 <div class="capture-options">
                     <div class="option-card" onclick="selectOption('speaker', event)">
-                        <input type="radio" name="captureOption" id="speaker" value="speaker">
+                        <input type="radio" name="captureOption" id="speaker" value="speaker" {% if cloud_mode %}disabled{% endif %}>
                         <label for="speaker">
                             <div class="option-icon">
                                 <i class="fas fa-desktop"></i>
@@ -48,7 +56,7 @@
                     </div>
 
                     <div class="option-card" onclick="selectOption('microphone', event)">
-                        <input type="radio" name="captureOption" id="microphone" value="microphone">
+                        <input type="radio" name="captureOption" id="microphone" value="microphone" {% if cloud_mode %}disabled{% endif %}>
                         <label for="microphone">
                             <div class="option-icon">
                                 <i class="fas fa-microphone-alt"></i>
@@ -59,7 +67,7 @@
                     </div>
 
                     <div class="option-card" onclick="selectOption('both', event)">
-                        <input type="radio" name="captureOption" id="both" value="both">
+                        <input type="radio" name="captureOption" id="both" value="both" {% if cloud_mode %}disabled{% endif %}>
                         <label for="both">
                             <div class="option-icon">
                                 <i class="fas fa-users"></i>
@@ -74,7 +82,7 @@
                 <div class="device-selection">
                     <h3><i class="fas fa-headphones"></i> Select Audio Device</h3>
                     <div style="margin-bottom: 15px; text-align: center;">
-                        <button class="btn-primary" onclick="autoDetectDevice()" style="margin-bottom: 10px;">
+                        <button class="btn-primary" onclick="autoDetectDevice()" style="margin-bottom: 10px;" {% if cloud_mode %}disabled{% endif %}>
                             <i class="fas fa-magic"></i> Auto-Detect Active Speaker
                         </button>
                         <p style="color: #666; font-size: 0.9rem; margin: 5px 0;">
@@ -83,13 +91,13 @@
                     </div>
 
                     <div class="device-list" id="deviceList">
-                        <div class="loading">Loading devices...</div>
+                        <div class="loading">{% if cloud_mode %}Not available in cloud mode{% else %}Loading devices...{% endif %}</div>
                     </div>
                 </div>
 
                 <!-- Controls -->
                 <div class="controls">
-                    <button id="startBtn" class="btn-success" onclick="startRecording()">
+                    <button id="startBtn" class="btn-success" onclick="startRecording()" {% if cloud_mode %}disabled{% endif %}>
                         <i class="fas fa-record-vinyl"></i> Start Recording
                     </button>
                     <button id="stopBtn" class="btn-danger" onclick="stopRecording()" disabled>
@@ -98,9 +106,10 @@
                     <button id="pauseBtn" class="btn-warning" onclick="togglePause()" disabled>
                         <i class="fas fa-pause"></i> Pause
                     </button>
-                    <button id="resetBtn" class="btn-info" onclick="resetCapture()">
+                    <button id="resetBtn" class="btn-info" onclick="resetCapture()" {% if cloud_mode %}disabled{% endif %}>
                         <i class="fas fa-redo"></i> Reset
                     </button>
+                </div>
                 </div>
 
                 <!-- Recording Status -->
@@ -294,89 +303,6 @@
                 <div class="notes-grid" id="notesGrid">
                     <div class="loading">Loading notes...</div>
                 </div>
-
-                <div class="note-details" id="noteDetails" style="display: none;">
-                    <div class="note-header">
-                        <h3 id="detailTitle">Meeting Notes</h3>
-                        <div class="note-actions">
-                            <button class="btn-success" onclick="downloadSelectedNote()">
-                                <i class="fas fa-download"></i> Download
-                            </button>
-                            <button class="btn-danger" onclick="deleteSelectedNote()">
-                                <i class="fas fa-trash"></i> Delete
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="note-meta">
-                        <div class="meta-item">
-                            <i class="fas fa-calendar"></i>
-                            <span id="detailDate">Date</span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="fas fa-clock"></i>
-                            <span id="detailDuration">Duration</span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="fas fa-file"></i>
-                            <span id="detailType">Type</span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="fas fa-database"></i>
-                            <span id="detailSize">Size</span>
-                        </div>
-                    </div>
-
-                    <div class="note-content-tabs">
-                        <button class="tab-btn active" onclick="switchDetailTab('detailTranscript', event)">Transcript</button>
-                        <button class="tab-btn" onclick="switchDetailTab('detailSummary', event)">Summary</button>
-                        <button class="tab-btn" onclick="switchDetailTab('detailActions', event)">Actions</button>
-                        <button class="tab-btn" onclick="switchDetailTab('detailAnalysis', event)">Full Analysis</button>
-                        <button class="tab-btn" onclick="switchDetailTab('detailChat', event)">💬 Chat</button>
-                    </div>
-
-                    <div class="note-content">
-                        <div id="detailTranscript" class="detail-pane active">
-                            <div class="content-box" id="detailTranscriptContent"></div>
-                        </div>
-                        <div id="detailSummary" class="detail-pane">
-                            <div class="content-box" id="detailSummaryContent"></div>
-                        </div>
-                        <div id="detailActions" class="detail-pane">
-                            <div class="content-box" id="detailActionsContent"></div>
-                        </div>
-                        <div id="detailAnalysis" class="detail-pane">
-                            <div class="content-box" id="detailAnalysisContent"></div>
-                        </div>
-                        <div id="detailChat" class="detail-pane">
-                            <div class="chat-container">
-                                <div class="chat-messages" id="chatMessages">
-                                    <div class="chat-welcome">
-                                        <i class="fas fa-robot"></i>
-                                        <p>Ask me anything about this meeting!</p>
-                                        <div class="chat-suggestions">
-                                            <button onclick="askSuggestion('What were the main decisions made?')">What were the main decisions?</button>
-                                            <button onclick="askSuggestion('What are the action items?')">What are the action items?</button>
-                                            <button onclick="askSuggestion('Give me a brief summary')">Give me a brief summary</button>
-                                            <button onclick="askSuggestion('What questions were raised?')">What questions were raised?</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="chat-input-row">
-                                    <input
-                                        type="text"
-                                        id="chatInput"
-                                        placeholder="Ask something about this meeting..."
-                                        onkeypress="if(event.key==='Enter') sendChatMessage()"
-                                    />
-                                    <button onclick="sendChatMessage()" id="chatSendBtn" class="btn-primary">
-                                        <i class="fas fa-paper-plane"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </section>
 
@@ -385,5 +311,6 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>window.CLOUD_MODE = {{ 'true' if cloud_mode else 'false' }};</script>
 <script src="{{ url_for('static', filename='js/meeting.js') }}"></script>
 {% endblock %}

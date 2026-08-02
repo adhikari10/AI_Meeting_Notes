@@ -86,3 +86,7 @@ htmlcov/
 # OS
 Thumbs.db
 Desktop.ini
+
+backend/meeting_notes/
+meeting_notes_webapp/notes/
+meeting_notes_webapp/uploads/
