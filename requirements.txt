@@ -22,6 +22,10 @@ flask-cors
 # YouTube ingestion
 yt-dlp
 
+# Storage backend (Postgres, used when DATABASE_URL is set)
+SQLAlchemy
+psycopg2-binary
+
 # Utils
 rich
 
