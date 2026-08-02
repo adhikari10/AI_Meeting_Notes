@@ -67,6 +67,13 @@ except ImportError as e:
     SPEAKER_DETECTION_AVAILABLE = False
     print(f"⚠️  Speaker detection not available: {e}")
 
+try:
+    from transcription_providers import GroqTranscriptionProvider, probe_duration
+    TRANSCRIPTION_PROVIDER_AVAILABLE = True
+except ImportError as e:
+    TRANSCRIPTION_PROVIDER_AVAILABLE = False
+    print(f"⚠️  Groq transcription provider not available: {e}")
+
 load_dotenv(dotenv_path=ENV_PATH)
 
 app = Flask(__name__,
@@ -216,6 +223,14 @@ class MeetingAssistant:
             print("✅ Speaker detector initialised")
         else:
             self.speaker_detector = None
+
+        self.transcription_provider = None
+        if TRANSCRIPTION_PROVIDER_AVAILABLE:
+            try:
+                self.transcription_provider = GroqTranscriptionProvider()
+                print("✅ Groq file-transcription provider initialised")
+            except Exception as e:
+                print(f"❌ Groq transcription provider setup error: {e}")
 
     def setup_ai_providers(self):
         self.providers = {}
@@ -489,7 +504,8 @@ class MeetingAssistant:
                 {"role": "user", "content": prompt}
             ],
             max_tokens=max_tokens,
-            temperature=0.2
+            temperature=0.2,
+            response_format={"type": "json_object"}
         )
 
         content = response.choices[0].message.content
@@ -499,6 +515,10 @@ class MeetingAssistant:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
+
+            content = (content
+                       .replace('“', '"').replace('”', '"')
+                       .replace('‘', "'").replace('’', "'"))
 
             return json.loads(content)
         except:
@@ -530,25 +550,36 @@ class MeetingAssistant:
         word_count = len(transcript.split())
         duration_min = round(duration_seconds / 60, 1) if duration_seconds else None
 
-        # Determine scale by duration if available, else fall back to word count
+        # Scale by whichever signal implies richer content — a short, dense
+        # recording (e.g. a fast-paced lecture) should get the same depth as
+        # a longer sparse one with the same word count. Using duration alone
+        # was bucketing dense short clips into shallow tiers.
         if duration_seconds:
             if duration_seconds < 180:        # under 3 min
-                scale = "short"
+                duration_scale = "short"
             elif duration_seconds < 900:      # 3-15 min
-                scale = "medium"
+                duration_scale = "medium"
             elif duration_seconds < 2700:     # 15-45 min
-                scale = "standard"
+                duration_scale = "standard"
             else:                             # 45+ min
-                scale = "long"
+                duration_scale = "long"
         else:
-            if word_count < 100:
-                scale = "short"
-            elif word_count < 400:
-                scale = "medium"
-            elif word_count < 1000:
-                scale = "standard"
-            else:
-                scale = "long"
+            duration_scale = None
+
+        if word_count < 100:
+            word_scale = "short"
+        elif word_count < 400:
+            word_scale = "medium"
+        elif word_count < 1000:
+            word_scale = "standard"
+        else:
+            word_scale = "long"
+
+        _scale_rank = {"short": 0, "medium": 1, "standard": 2, "long": 3}
+        scale = max(
+            [s for s in (duration_scale, word_scale) if s],
+            key=lambda s: _scale_rank[s]
+        )
 
         print(f"📊 Upload summary: {word_count} words, {duration_min}min → scale={scale}")
 
@@ -559,50 +590,67 @@ class MeetingAssistant:
         # For short/medium/standard use single prompt with duration context
         duration_context = f"Duration: {duration_min} minutes. " if duration_min else ""
 
-        if scale == "short":
-            max_tokens = 300
-            prompt = f"""{duration_context}Short audio clip transcript ({word_count} words):
+        context_instructions = (
+            "First, work out from the content what this recording actually is — "
+            "a business meeting, a lecture/lesson, a talk or presentation, an "
+            "interview, or something else — and tailor your response to that. "
+            "For lecture/talk/educational content: focus the summary and key "
+            "points on the concepts, arguments, and information conveyed, "
+            "written so someone who never watched it can understand what the "
+            "speaker was teaching or explaining. Leave 'actions' and "
+            "'decisions' empty for non-meeting content — don't force them."
+        )
 
-{transcript[:1500]}
+        if scale == "short":
+            max_tokens = 400
+            prompt = f"""{duration_context}Transcript ({word_count} words):
+
+{transcript[:2500]}
+
+{context_instructions}
 
 Return JSON:
 {{
-  "summary": "1-2 sentence summary",
-  "actions": ["action if any"],
-  "decisions": ["decision if any"],
-  "key_points": ["main point"]
+  "summary": "2-3 sentences covering what this is about and its main point",
+  "actions": ["action if any, else leave empty"],
+  "decisions": ["decision if any, else leave empty"],
+  "key_points": ["1-3 substantive points, each a full explanatory sentence"]
 }}"""
 
         elif scale == "medium":
-            max_tokens = 600
-            prompt = f"""{duration_context}Audio transcript ({word_count} words):
+            max_tokens = 900
+            prompt = f"""{duration_context}Transcript ({word_count} words):
 
-{transcript[:3000]}
+{transcript[:7000]}
+
+{context_instructions}
 
 Return JSON:
 {{
-  "summary": "2-3 sentence summary",
-  "actions": ["action items with owner if mentioned"],
-  "decisions": ["decisions made"],
-  "key_points": ["3-5 key points"],
-  "topics": ["main topics covered"]
+  "summary": "3-5 sentences explaining what was discussed or taught and why it matters",
+  "actions": ["action items with owner if mentioned, else leave empty"],
+  "decisions": ["decisions made, else leave empty"],
+  "key_points": ["4-7 substantive points — each a full sentence explaining a specific concept, fact, or discussion point in enough detail to stand alone"],
+  "topics": ["main topics/subjects covered"]
 }}"""
 
         else:  # standard
-            max_tokens = 900
-            prompt = f"""{duration_context}Meeting transcript ({word_count} words):
+            max_tokens = 1600
+            prompt = f"""{duration_context}Transcript ({word_count} words):
 
-{transcript[:6000]}
+{transcript[:16000]}
+
+{context_instructions}
 
 Return JSON:
 {{
-  "summary": "3-5 sentence executive summary",
-  "actions": ["action items with owner and deadline if mentioned"],
-  "decisions": ["all decisions made"],
-  "key_points": ["5-8 key points"],
-  "topics": ["all main topics covered"],
-  "questions_raised": ["open questions"],
-  "next_steps": ["follow-up items"]
+  "summary": "5-8 sentence in-depth overview: what this covers, the structure/flow of the content, and why it matters",
+  "actions": ["action items with owner and deadline if mentioned, else leave empty"],
+  "decisions": ["all decisions made, else leave empty"],
+  "key_points": ["7-12 substantive points — each a full sentence explaining a specific concept, argument, or fact in enough detail that someone who didn't watch this could understand what the speaker covered"],
+  "topics": ["all main topics/subjects covered"],
+  "questions_raised": ["open questions raised"],
+  "next_steps": ["follow-up items or what comes next, if any"]
 }}"""
 
         try:
@@ -613,7 +661,7 @@ Return JSON:
                     prompt,
                     provider,
                     max_tokens,
-                    f"Expert meeting analyst. {duration_context}Return ONLY valid JSON."
+                    f"Expert analyst who adapts to the type of content — meeting, lecture, talk, or interview. {duration_context}Return ONLY valid JSON."
                 )
                 result = future.result(timeout=60)
                 return result
@@ -627,6 +675,7 @@ Return JSON:
         Prevents cutting off the last 80% of a long meeting.
         """
         print(f"🗺️  Using map-reduce for long transcript...")
+        map_reduce_start = time.time()
 
         # Split transcript into chunks of ~1500 words each
         words = transcript.split()
@@ -642,28 +691,34 @@ Return JSON:
         chunk_summaries = []
         for i, chunk in enumerate(chunks):
             print(f"   Summarizing chunk {i+1}/{len(chunks)}...")
-            chunk_prompt = f"""Summarize this section of a meeting transcript (part {i+1} of {len(chunks)}):
+            chunk_prompt = f"""Summarize this section of a transcript (part {i+1} of {len(chunks)}).
+This could be a meeting, a lecture/lesson, a talk, or an interview — judge
+from the content and adapt. For lecture/educational content, focus on the
+concepts and information explained rather than forcing meeting-style fields.
 
 {chunk}
 
 Return JSON:
 {{
-  "summary": "2-3 sentence summary of this section",
-  "actions": ["action items in this section"],
-  "decisions": ["decisions in this section"],
-  "key_points": ["2-4 key points from this section"]
+  "summary": "2-4 sentences on what this section covers",
+  "actions": ["action items in this section, else leave empty"],
+  "decisions": ["decisions in this section, else leave empty"],
+  "key_points": ["3-6 substantive points — each a full sentence explaining a specific concept, fact, or discussion point from this section"]
 }}"""
 
+            chunk_start = time.time()
             try:
-                result = self._call_ai(chunk_prompt, provider, 400,
-                                       "Summarize meeting transcript sections. Return ONLY valid JSON.")
+                result = self._call_ai(chunk_prompt, provider, 600,
+                                       "Summarize transcript sections, adapting to whether the content is a meeting, lecture, talk, or interview. Return ONLY valid JSON.")
                 if result and result.get('summary'):
                     chunk_summaries.append(result)
+                print(f"   ...chunk {i+1} done in {time.time() - chunk_start:.1f}s")
             except Exception as e:
-                print(f"   ⚠️ Chunk {i+1} failed: {e}")
+                print(f"   ⚠️ Chunk {i+1} failed after {time.time() - chunk_start:.1f}s: {e}")
                 continue
-
-            time.sleep(1)
+            # No artificial delay between chunks — Groq's rate limits comfortably
+            # cover this volume; if 429s start showing up here, reintroduce a
+            # short backoff instead of a flat sleep on every chunk.
 
         if not chunk_summaries:
             return self.simple_analysis(transcript)
@@ -687,77 +742,127 @@ Return JSON:
         duration_context = f"Total duration: {duration_min} minutes." if duration_min else ""
 
         reduce_prompt = f"""{duration_context}
-This is a long meeting broken into {len(chunks)} sections.
-Here are summaries of each section:
+This is a long recording broken into {len(chunks)} sections — it could be a
+meeting, a lecture/lesson, a talk, or an interview. Here are summaries of
+each section:
 
 {all_summaries}
 
-Combine these into a final comprehensive meeting report.
+Combine these into a final comprehensive report, adapted to what this
+content actually is. For lecture/educational content, the summary and key
+points should let someone who never watched it understand what the speaker
+taught or discussed — don't force meeting-style fields onto it.
 
 Return JSON:
 {{
-  "summary": "4-6 sentence executive summary covering the entire meeting",
+  "summary": "6-10 sentence in-depth overview covering the full arc of the content and why it matters",
   "actions": {json.dumps(list(dict.fromkeys(all_actions)))},
   "decisions": {json.dumps(list(dict.fromkeys(all_decisions)))},
-  "key_points": ["8-12 most important points from the whole meeting"],
-  "topics": ["all major topics covered across all sections"],
+  "key_points": ["10-15 most important points from the whole recording — each a full sentence explaining a specific concept, argument, or fact in enough detail to stand alone"],
+  "topics": ["all major topics/subjects covered across all sections"],
   "questions_raised": ["open questions from any section"],
-  "next_steps": ["all follow-up items"],
-  "insights": ["notable patterns or insights across the meeting"]
+  "next_steps": ["all follow-up items, if any"],
+  "insights": ["notable patterns, themes, or insights across the whole recording"]
 }}"""
 
         try:
-            final = self._call_ai(reduce_prompt, provider, 1400,
-                                  "Expert meeting analyst combining section summaries. Return ONLY valid JSON.")
-            return final if final else self.simple_analysis(transcript)
+            reduce_start = time.time()
+            final = self._call_ai(reduce_prompt, provider, 2200,
+                                  "Expert analyst combining section summaries, adapting to whether the content is a meeting, lecture, talk, or interview. Return ONLY valid JSON.")
+            print(f"   ...reduce phase done in {time.time() - reduce_start:.1f}s")
+            print(f"🗺️  Map-reduce total: {time.time() - map_reduce_start:.1f}s")
+            return final if final else self._stitched_chunk_fallback(chunk_summaries, all_actions, all_decisions, all_key_points)
         except Exception as e:
             print(f"❌ Reduce phase error: {e}")
-            return self.simple_analysis(transcript)
+            # The merge step failed, but the per-chunk summaries above already
+            # succeeded — stitch those together instead of dropping back to
+            # simple_analysis(transcript), which only grabs 1-2 raw sentences
+            # and throws away all the map-phase work.
+            return self._stitched_chunk_fallback(chunk_summaries, all_actions, all_decisions, all_key_points)
+
+    def _stitched_chunk_fallback(self, chunk_summaries, all_actions, all_decisions, all_key_points):
+        """Best-effort combined result built from already-succeeded chunk
+        summaries, used when the reduce (merge) call itself fails."""
+        summary = ' '.join(s.get('summary', '') for s in chunk_summaries if s.get('summary'))
+        return {
+            "summary": summary,
+            "actions": list(dict.fromkeys(all_actions)),
+            "decisions": list(dict.fromkeys(all_decisions)),
+            "key_points": list(dict.fromkeys(all_key_points)),
+        }
 
     def _call_ai(self, prompt, provider, max_tokens, system_prompt):
-        """Reusable AI call with JSON parsing"""
+        """Reusable AI call with JSON parsing.
+
+        Raises on failure instead of degrading silently — callers already
+        catch exceptions and fall back to simple_analysis(transcript), which
+        uses the real transcript. Returning simple_analysis(content) from
+        here used to fall back on the model's raw (sometimes truncated,
+        invalid-JSON) completion text instead, which could surface as a
+        garbled fragment mislabeled as a "summary".
+        """
         client = self.providers[provider]
 
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=max_tokens,
-            temperature=0.2
-        )
+        def _request(tokens):
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=tokens,
+                temperature=0.2,
+                response_format={"type": "json_object"}
+            )
+            return response.choices[0]
 
-        content = response.choices[0].message.content
+        choice = _request(max_tokens)
 
-        try:
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-            return json.loads(content)
-        except:
-            return self.simple_analysis(content)
+        # If the model ran out of budget mid-response, retry once with more
+        # room rather than parsing (and failing on) a truncated payload.
+        if choice.finish_reason == "length":
+            print(f"⚠️  AI response truncated at {max_tokens} tokens — retrying with more room")
+            choice = _request(min(max_tokens * 2, 4096))
+
+        content = choice.message.content
+
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+
+        # Defensive normalization — models occasionally emit "smart" quotes
+        # (curly “ ” / ‘ ’) inside otherwise-valid JSON, which breaks strict
+        # parsing. response_format=json_object should prevent this, but keep
+        # the fallback in case a provider ignores that flag.
+        content = (content
+                   .replace('“', '"').replace('”', '"')
+                   .replace('‘', "'").replace('’', "'"))
+
+        return json.loads(content)
 
     def process_file(self, filepath, options):
         import re
         try:
-            result = self.whisper_model.transcribe(
-                filepath,
-                language='en',
-                temperature=0.0,
-                condition_on_previous_text=False,
-            )
-            raw_transcript = result["text"]
+            if not self.transcription_provider:
+                raise RuntimeError(
+                    "Groq transcription provider is not available (check GROQ_API_KEY)"
+                )
 
-            # Get actual duration from Whisper result
-            duration_seconds = None
-            if result.get('segments'):
-                last_segment = result['segments'][-1]
-                duration_seconds = last_segment.get('end', None)
+            duration_seconds = probe_duration(filepath)
+            if duration_seconds:
                 print(f"⏱️  Detected duration: {duration_seconds:.1f}s ({duration_seconds/60:.1f}min)")
 
+            transcribe_start = time.time()
+            raw_transcript = self.transcription_provider.transcribe_file(filepath, language='en')
+            print(f"⏱️  Transcription took {time.time() - transcribe_start:.1f}s "
+                  f"({len(raw_transcript.split())} words)")
+
             # --- sentence-level gibberish filter + deduplication ---
+            # NOTE: checks 1-2 in is_gibberish() (non-ASCII ratio, real-word
+            # ratio) were tuned around local Whisper's noisier hallucinations;
+            # they may end up firing less often on Groq's cleaner output. Left
+            # as-is for now — not removing anything without evidence.
             sentences = re.split(r'(?<=[.!?])\s+', raw_transcript.strip())
             seen = set()
             clean_sentences = []
@@ -782,7 +887,9 @@ Return JSON:
 
             if options.get('generateSummary', True):
                 provider = options.get('model', 'groq')
+                summary_start = time.time()
                 analysis = self.analyze_upload_with_ai(transcript, provider, duration_seconds)
+                print(f"⏱️  Summary generation took {time.time() - summary_start:.1f}s")
 
             return {
                 "transcript": transcript,
@@ -1404,6 +1511,10 @@ def get_note(note_id):
             'actions': data.get('actions', []),
             'decisions': data.get('decisions', []),
             'key_points': data.get('key_points', []),
+            'topics': data.get('topics', []),
+            'questions_raised': data.get('questions_raised', []),
+            'next_steps': data.get('next_steps', []),
+            'insights': data.get('insights', []),
             'analysis': data.get('summary', '')  # For full analysis tab
         })
     except Exception as e:

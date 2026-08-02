@@ -370,6 +370,44 @@
     line-height: 1.6;
 }
 
+/* ── Structured summary (overview + key points/topics/etc) ──────── */
+.summary-section { margin-bottom: 20px; }
+.summary-section:last-child { margin-bottom: 0; }
+
+.summary-section.summary-overview {
+    font-size: 1.02em;
+}
+
+.summary-section h4 {
+    margin: 0 0 8px;
+    font-size: 0.95em;
+    color: #555;
+}
+
+.summary-section ul {
+    margin: 0;
+    padding-left: 22px;
+}
+
+.summary-section li {
+    margin-bottom: 8px;
+}
+
+.topic-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.topic-tag {
+    background: #f0f2ff;
+    color: #4b5bd6;
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
 /* ── Notes Controls ──────────────────────────────────────── */
 .notes-controls {
     background: white;

@@ -251,31 +251,22 @@ async function generateLiveSummary() {
         const result = await response.json();
         analysisDiv.innerHTML = '';
 
-        if (result.summary) {
-            const summary = document.createElement('div');
-            summary.className = 'analysis-item';
-            summary.innerHTML = `<strong>📝 Summary:</strong><br>${result.summary}`;
-            analysisDiv.appendChild(summary);
-        }
-
-        if (result.key_points && result.key_points.length > 0) {
-            const points = document.createElement('div');
-            points.className = 'analysis-item';
-            points.innerHTML = `<strong>🔑 Key Points:</strong><br>${result.key_points.map(p => `• ${p}`).join('<br>')}`;
-            analysisDiv.appendChild(points);
-        }
+        const summaryBlock = document.createElement('div');
+        summaryBlock.className = 'analysis-item';
+        summaryBlock.innerHTML = renderAnalysis(result);
+        analysisDiv.appendChild(summaryBlock);
 
         if (result.actions && result.actions.length > 0) {
             const actions = document.createElement('div');
             actions.className = 'analysis-item';
-            actions.innerHTML = `<strong>✅ Action Items:</strong><br>${result.actions.map(a => `• ${a}`).join('<br>')}`;
+            actions.innerHTML = `<h4>✅ Action Items</h4>${formatActions(result.actions)}`;
             analysisDiv.appendChild(actions);
         }
 
         if (result.decisions && result.decisions.length > 0) {
             const decisions = document.createElement('div');
             decisions.className = 'analysis-item';
-            decisions.innerHTML = `<strong>🎯 Decisions:</strong><br>${result.decisions.map(d => `• ${d}`).join('<br>')}`;
+            decisions.innerHTML = bulletSection('🎯 Decisions', result.decisions);
             analysisDiv.appendChild(decisions);
         }
 
@@ -588,29 +579,59 @@ function updateProgress(percent, text) {
 
 function showResults(result) {
     document.getElementById('fileTranscript').textContent = result.transcript || 'No transcript available';
-    document.getElementById('fileSummary').innerHTML = formatSummary(result.summary);
+    document.getElementById('fileSummary').innerHTML = renderAnalysis(result);
     document.getElementById('fileActions').innerHTML = formatActions(result.actions);
     document.getElementById('resultsContainer').style.display = 'block';
     window.lastResult = result;
 }
 
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 function formatSummary(summary) {
     if (!summary) return '<p>No summary available</p>';
-    return summary
+    return escapeHtml(summary)
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-        .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-        .replace(/^# (.*$)/gm, '<h1>$1</h1>')
-        .replace(/^- (.*$)/gm, '<li>$1</li>')
         .replace(/\n/g, '<br>');
+}
+
+function bulletSection(title, items) {
+    if (!items || items.length === 0) return '';
+    const lis = items.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+    return `<div class="summary-section"><h4>${title}</h4><ul>${lis}</ul></div>`;
+}
+
+function tagSection(title, items) {
+    if (!items || items.length === 0) return '';
+    const tags = items.map(item => `<span class="topic-tag">${escapeHtml(item)}</span>`).join('');
+    return `<div class="summary-section"><h4>${title}</h4><div class="topic-tags">${tags}</div></div>`;
+}
+
+// Combines the paragraph summary with the structured fields (key points,
+// topics, questions, next steps, insights) the backend already generates
+// but were previously discarded by the UI — keeps a long summary from
+// reading as one dense block of text.
+function renderAnalysis(result) {
+    if (!result || !result.summary) return '<p>No summary available</p>';
+
+    let html = `<div class="summary-section summary-overview">${formatSummary(result.summary)}</div>`;
+    html += bulletSection('🔑 Key Points', result.key_points);
+    html += tagSection('🏷️ Topics', result.topics);
+    html += bulletSection('❓ Questions Raised', result.questions_raised);
+    html += bulletSection('➡️ Next Steps', result.next_steps);
+    html += bulletSection('💡 Insights', result.insights);
+    return html;
 }
 
 function formatActions(actions) {
     if (!actions || actions.length === 0) return '<p>No action items found</p>';
     let html = '<ul class="actions-list">';
     actions.forEach(action => {
-        html += `<li><i class="fas fa-check-circle"></i> ${action}</li>`;
+        html += `<li><i class="fas fa-check-circle"></i> ${escapeHtml(action)}</li>`;
     });
     html += '</ul>';
     return html;
@@ -725,7 +746,7 @@ async function loadNoteDetails(noteId) {
         document.getElementById('detailSize').textContent = note.size || 'N/A';
 
         document.getElementById('detailTranscriptContent').textContent = note.transcript || 'No transcript available';
-        document.getElementById('detailSummaryContent').innerHTML = formatSummary(note.summary);
+        document.getElementById('detailSummaryContent').innerHTML = renderAnalysis(note);
         document.getElementById('detailActionsContent').innerHTML = formatActions(note.actions);
         document.getElementById('detailAnalysisContent').textContent = note.analysis || 'No analysis available';
 
