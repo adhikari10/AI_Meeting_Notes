@@ -111,10 +111,25 @@ load_dotenv(dotenv_path=ENV_PATH)
 app = Flask(__name__,
             template_folder=str(_HERE / 'templates'),
             static_folder=str(_HERE / 'static'))
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['UPLOAD_FOLDER'] = str(BASE_DIR / 'uploads')
-app.config['NOTES_FOLDER']  = str(BASE_DIR / 'notes')
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
+
+# SECRET_KEY is effectively mandatory in cloud deployment: with no env var
+# set, each process falls back to its own random key, so signed sessions
+# break the moment there's more than one gunicorn worker (or a restart) —
+# a request signed by worker A won't validate on worker B. Fine for a
+# single-process local run; not fine behind a multi-worker cloud deploy.
+_secret_key = os.getenv("SECRET_KEY")
+if not _secret_key:
+    import secrets as _secrets
+    _secret_key = _secrets.token_hex(32)
+    print("⚠️  SECRET_KEY not set — using a random key for this process only.")
+    print("   Sessions will break across restarts, and across workers if")
+    print("   running under multiple gunicorn workers. Set SECRET_KEY in")
+    print("   production/cloud deployments.")
+app.config['SECRET_KEY'] = _secret_key
+
+app.config['UPLOAD_FOLDER'] = os.getenv("UPLOAD_FOLDER", str(BASE_DIR / 'uploads'))
+app.config['NOTES_FOLDER']  = os.getenv("NOTES_FOLDER", str(BASE_DIR / 'notes'))
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv("MAX_UPLOAD_MB", "500")) * 1024 * 1024
 
 Path(app.config['UPLOAD_FOLDER']).mkdir(exist_ok=True)
 Path(app.config['NOTES_FOLDER']).mkdir(exist_ok=True)
@@ -1105,6 +1120,15 @@ def get_settings():
 
 
 # Routes
+@app.route('/health')
+def health():
+    """Unauthenticated liveness/readiness probe for hosting platforms."""
+    return jsonify({
+        'status': 'ok',
+        'cloud_mode': CLOUD_MODE,
+        'groq_configured': bool(os.getenv('GROQ_API_KEY')),
+    })
+
 @app.route('/')
 def home():
     return render_template('home.html')
@@ -1861,13 +1885,20 @@ def run_speaker_diarization():
 
 
 if __name__ == '__main__':
+    _host = os.getenv("HOST", "0.0.0.0")
+    _port = int(os.getenv("PORT", "5000"))
+    # Fails safe: Flask's debug mode exposes the Werkzeug interactive
+    # debugger, which lets anyone who can reach a stack trace run arbitrary
+    # code. Default OFF; set FLASK_DEBUG=true for local desktop development.
+    _debug = os.getenv("FLASK_DEBUG", "false").strip().lower() == "true"
+
     print("\n" + "="*50)
     print("   Smart Meeting Notes")
     if VAD_AVAILABLE:
         print("   🔇 Noise Suppression: ENABLED")
     else:
         print("   🔇 Noise Suppression: DISABLED (basic mode)")
-    print("   Running on http://localhost:5000")
+    print(f"   Running on http://{_host}:{_port}")
     print("="*50 + "\n")
 
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=_debug, host=_host, port=_port)
