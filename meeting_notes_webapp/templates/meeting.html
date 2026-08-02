@@ -1,74 +1,31 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🤖 Smart Meeting Notes - AI Note Taker</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
-<body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="nav-brand">
-                <i class="fas fa-robot"></i>
-                <span>Smart Meeting Notes</span>
-            </div>
-            <div class="nav-links">
-                <a href="#home" class="nav-link active"><i class="fas fa-home"></i> Home</a>
-                <a href="#capture" class="nav-link"><i class="fas fa-microphone"></i> Live Capture</a>
-                <a href="#upload" class="nav-link"><i class="fas fa-upload"></i> Upload</a>
-                <a href="#notes" class="nav-link"><i class="fas fa-file-alt"></i> My Notes</a>
-            </div>
-        </div>
-    </nav>
+{% extends "base.html" %}
 
-    <!-- Main Content -->
+{% block title %}Meeting Notes — Smart Meeting Notes{% endblock %}
+{% block active_meeting %}active{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/meeting.css') }}">
+{% endblock %}
+
+{% block content %}
+
+    <!-- Meeting Sub-Navigation -->
+    <div class="meeting-subnav">
+        <div class="subnav-container">
+            <a href="#capture" class="nav-link active">
+                <i class="fas fa-microphone"></i> Live Capture
+            </a>
+            <a href="#upload" class="nav-link">
+                <i class="fas fa-upload"></i> Upload
+            </a>
+            <a href="#notes" class="nav-link">
+                <i class="fas fa-file-alt"></i> My Notes
+            </a>
+        </div>
+    </div>
+
+    <!-- Main Container -->
     <div class="container">
-        <!-- Home Section -->
-        <section id="home" class="section active">
-            <div class="hero">
-                <h1><i class="fas fa-robot"></i> AI-Powered Meeting Notes</h1>
-                <p class="subtitle">Automatically capture, transcribe, and summarize meetings in real-time</p>
-                
-                <div class="feature-cards">
-                    <div class="feature-card">
-                        <div class="feature-icon">
-                            <i class="fas fa-microphone"></i>
-                        </div>
-                        <h3>Live Capture</h3>
-                        <p>Record meetings from speaker output or microphone in real-time</p>
-                        <button class="btn-primary" onclick="switchSection('capture')">
-                            Start Live Capture <i class="fas fa-arrow-right"></i>
-                        </button>
-                    </div>
-                    
-                    <div class="feature-card">
-                        <div class="feature-icon">
-                            <i class="fas fa-upload"></i>
-                        </div>
-                        <h3>Upload & Process</h3>
-                        <p>Upload audio/video files and get AI-powered summaries</p>
-                        <button class="btn-primary" onclick="switchSection('upload')">
-                            Upload Files <i class="fas fa-arrow-right"></i>
-                        </button>
-                    </div>
-                    
-                    <div class="feature-card">
-                        <div class="feature-icon">
-                            <i class="fas fa-file-alt"></i>
-                        </div>
-                        <h3>View Notes</h3>
-                        <p>Access all your saved meeting notes and summaries</p>
-                        <button class="btn-primary" onclick="switchSection('notes')">
-                            View Notes <i class="fas fa-arrow-right"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </section>
 
         <!-- Live Capture Section -->
         <section id="capture" class="section">
@@ -76,10 +33,9 @@
                 <h2><i class="fas fa-microphone"></i> Live Meeting Capture</h2>
                 <p>Record meetings in real-time and get instant AI analysis</p>
             </div>
-            
+
             <div class="capture-container">
                 <div class="capture-options">
-                    <!-- FIX 11: Pass event object explicitly via onclick -->
                     <div class="option-card" onclick="selectOption('speaker', event)">
                         <input type="radio" name="captureOption" id="speaker" value="speaker">
                         <label for="speaker">
@@ -90,7 +46,7 @@
                             <p>Record Zoom/Teams/Meet meetings. Captures audio from your speakers.</p>
                         </label>
                     </div>
-                    
+
                     <div class="option-card" onclick="selectOption('microphone', event)">
                         <input type="radio" name="captureOption" id="microphone" value="microphone">
                         <label for="microphone">
@@ -101,7 +57,7 @@
                             <p>Record in-person meetings. Captures your voice and others.</p>
                         </label>
                     </div>
-                    
+
                     <div class="option-card" onclick="selectOption('both', event)">
                         <input type="radio" name="captureOption" id="both" value="both">
                         <label for="both">
@@ -113,7 +69,7 @@
                         </label>
                     </div>
                 </div>
-                
+
                 <!-- Audio Device Selection -->
                 <div class="device-selection">
                     <h3><i class="fas fa-headphones"></i> Select Audio Device</h3>
@@ -124,14 +80,13 @@
                         <p style="color: #666; font-size: 0.9rem; margin: 5px 0;">
                             Play audio from your meeting and click to automatically select the right device
                         </p>
-                    </div>   
-
+                    </div>
 
                     <div class="device-list" id="deviceList">
                         <div class="loading">Loading devices...</div>
                     </div>
                 </div>
-                
+
                 <!-- Controls -->
                 <div class="controls">
                     <button id="startBtn" class="btn-success" onclick="startRecording()">
@@ -147,7 +102,7 @@
                         <i class="fas fa-redo"></i> Reset
                     </button>
                 </div>
-                
+
                 <!-- Recording Status -->
                 <div class="status-box">
                     <div class="status-indicator" id="statusIndicator">
@@ -156,7 +111,7 @@
                     </div>
                     <div class="timer" id="timer">00:00:00</div>
                 </div>
-                
+
                 <!-- Live Transcript -->
                 <div class="transcript-box">
                     <h3><i class="fas fa-scroll"></i> Live Transcript</h3>
@@ -164,7 +119,7 @@
                         <div class="placeholder">Transcript will appear here...</div>
                     </div>
                 </div>
-                
+
                 <!-- AI Analysis -->
                 <div class="analysis-box">
                     <h3><i class="fas fa-brain"></i> AI Analysis</h3>
@@ -181,8 +136,31 @@
                 <h2><i class="fas fa-upload"></i> Upload Audio/Video File</h2>
                 <p>Upload recorded meetings and get AI-powered summaries</p>
             </div>
-            
+
             <div class="upload-container">
+                <!-- URL Transcription -->
+                <div class="url-input-section">
+                    <h3><i class="fas fa-link"></i> Transcribe from URL</h3>
+                    <p>Paste a YouTube, Twitter, Facebook or any video URL</p>
+                    <div class="url-input-row">
+                        <input
+                            type="text"
+                            id="videoUrl"
+                            placeholder="https://youtube.com/watch?v=..."
+                            class="url-input"
+                            onkeydown="if(event.key==='Enter') processVideoUrl()"
+                        />
+                        <button onclick="processVideoUrl()" class="btn-primary" id="urlProcessBtn">
+                            <i class="fas fa-download"></i> Transcribe
+                        </button>
+                    </div>
+                    <div id="urlStatus" class="url-status" style="display:none"></div>
+                </div>
+
+                <div class="section-divider">
+                    <span>OR upload a file</span>
+                </div>
+
                 <div class="drop-zone" id="dropZone">
                     <i class="fas fa-cloud-upload-alt"></i>
                     <h3>Drop your files here</h3>
@@ -190,7 +168,7 @@
                     <p class="file-types">Supported: MP3, WAV, M4A, MP4, AVI, MOV</p>
                     <input type="file" id="fileInput" accept=".mp3,.wav,.m4a,.mp4,.avi,.mov" hidden>
                 </div>
-                
+
                 <div class="file-info" id="fileInfo" style="display: none;">
                     <div class="file-preview">
                         <i class="fas fa-file-audio"></i>
@@ -203,41 +181,41 @@
                         </button>
                     </div>
                 </div>
-                
+
                 <div class="processing-options">
                     <h3><i class="fas fa-cogs"></i> Processing Options</h3>
-                    
+
                     <div class="option-group">
                         <label>
                             <input type="checkbox" id="generateSummary" checked>
                             <span>Generate AI Summary</span>
                         </label>
-                        
+
                         <label>
                             <input type="checkbox" id="extractActions" checked>
                             <span>Extract Action Items</span>
                         </label>
-                        
+
                         <label>
                             <input type="checkbox" id="detectDecisions" checked>
                             <span>Detect Decisions</span>
                         </label>
                     </div>
-                    
+
                     <div class="ai-model">
                         <label for="modelSelect">AI Model:</label>
                         <select id="modelSelect">
-                            <option value="groq">Groq (Fast & Free)</option>
+                            <option value="groq">Groq (Fast &amp; Free)</option>
                             <option value="deepseek">DeepSeek (Cheap)</option>
                             <option value="openai">OpenAI</option>
                         </select>
                     </div>
                 </div>
-                
+
                 <button id="processBtn" class="btn-primary" onclick="processFile()" disabled>
                     <i class="fas fa-play"></i> Process File
                 </button>
-                
+
                 <div class="progress-container" id="progressContainer" style="display: none;">
                     <div class="progress-header">
                         <h4>Processing...</h4>
@@ -253,7 +231,7 @@
                         <div class="step" id="step4">Complete</div>
                     </div>
                 </div>
-                
+
                 <div class="results-container" id="resultsContainer" style="display: none;">
                     <div class="results-header">
                         <h3><i class="fas fa-file-alt"></i> Results</h3>
@@ -261,14 +239,13 @@
                             <i class="fas fa-download"></i> Download Notes
                         </button>
                     </div>
-                    
+
                     <div class="results-tabs">
-                        <!-- FIX 12: Pass event to switchTab -->
                         <button class="tab-btn active" onclick="switchTab('transcriptTab', event)">Transcript</button>
                         <button class="tab-btn" onclick="switchTab('summaryTab', event)">Summary</button>
                         <button class="tab-btn" onclick="switchTab('actionsTab', event)">Action Items</button>
                     </div>
-                    
+
                     <div class="tab-content">
                         <div id="transcriptTab" class="tab-pane active">
                             <div class="content-box" id="fileTranscript"></div>
@@ -290,14 +267,14 @@
                 <h2><i class="fas fa-file-alt"></i> My Meeting Notes</h2>
                 <p>View and manage all your saved meeting notes</p>
             </div>
-            
+
             <div class="notes-container">
                 <div class="notes-controls">
                     <div class="search-box">
                         <i class="fas fa-search"></i>
                         <input type="text" id="searchNotes" placeholder="Search notes...">
                     </div>
-                    
+
                     <div class="filter-group">
                         <select id="filterDate">
                             <option value="all">All Dates</option>
@@ -305,7 +282,7 @@
                             <option value="week">This Week</option>
                             <option value="month">This Month</option>
                         </select>
-                        
+
                         <select id="filterType">
                             <option value="all">All Types</option>
                             <option value="live">Live Recordings</option>
@@ -313,11 +290,11 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="notes-grid" id="notesGrid">
                     <div class="loading">Loading notes...</div>
                 </div>
-                
+
                 <div class="note-details" id="noteDetails" style="display: none;">
                     <div class="note-header">
                         <h3 id="detailTitle">Meeting Notes</h3>
@@ -330,7 +307,7 @@
                             </button>
                         </div>
                     </div>
-                    
+
                     <div class="note-meta">
                         <div class="meta-item">
                             <i class="fas fa-calendar"></i>
@@ -349,15 +326,15 @@
                             <span id="detailSize">Size</span>
                         </div>
                     </div>
-                    
+
                     <div class="note-content-tabs">
-                        <!-- FIX 13: Pass event to switchDetailTab -->
                         <button class="tab-btn active" onclick="switchDetailTab('detailTranscript', event)">Transcript</button>
                         <button class="tab-btn" onclick="switchDetailTab('detailSummary', event)">Summary</button>
                         <button class="tab-btn" onclick="switchDetailTab('detailActions', event)">Actions</button>
                         <button class="tab-btn" onclick="switchDetailTab('detailAnalysis', event)">Full Analysis</button>
+                        <button class="tab-btn" onclick="switchDetailTab('detailChat', event)">💬 Chat</button>
                     </div>
-                    
+
                     <div class="note-content">
                         <div id="detailTranscript" class="detail-pane active">
                             <div class="content-box" id="detailTranscriptContent"></div>
@@ -371,26 +348,42 @@
                         <div id="detailAnalysis" class="detail-pane">
                             <div class="content-box" id="detailAnalysisContent"></div>
                         </div>
+                        <div id="detailChat" class="detail-pane">
+                            <div class="chat-container">
+                                <div class="chat-messages" id="chatMessages">
+                                    <div class="chat-welcome">
+                                        <i class="fas fa-robot"></i>
+                                        <p>Ask me anything about this meeting!</p>
+                                        <div class="chat-suggestions">
+                                            <button onclick="askSuggestion('What were the main decisions made?')">What were the main decisions?</button>
+                                            <button onclick="askSuggestion('What are the action items?')">What are the action items?</button>
+                                            <button onclick="askSuggestion('Give me a brief summary')">Give me a brief summary</button>
+                                            <button onclick="askSuggestion('What questions were raised?')">What questions were raised?</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="chat-input-row">
+                                    <input
+                                        type="text"
+                                        id="chatInput"
+                                        placeholder="Ask something about this meeting..."
+                                        onkeypress="if(event.key==='Enter') sendChatMessage()"
+                                    />
+                                    <button onclick="sendChatMessage()" id="chatSendBtn" class="btn-primary">
+                                        <i class="fas fa-paper-plane"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </section>
-    </div>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="footer-content">
-            <p>🤖 Smart Meeting Notes - AI-Powered Note Taker | Running on localhost:5000</p>
-            <p class="footer-links">
-                <a href="#"><i class="fab fa-github"></i> GitHub</a>
-                <a href="#"><i class="fas fa-question-circle"></i> Help</a>
-                <a href="#"><i class="fas fa-cog"></i> Settings</a>
-            </p>
-        </div>
-    </footer>
+    </div><!-- /.container -->
 
-    <!-- JavaScript -->
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-</body>
-</html>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/meeting.js') }}"></script>
+{% endblock %}

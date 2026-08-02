@@ -8,7 +8,7 @@ import time
 import threading
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import whisper
@@ -34,12 +34,47 @@ except ImportError as e:
     print("   Running without noise suppression (will still work!)")
     print("   To enable: pip install webrtcvad noisereduce scipy")
 
-load_dotenv()
+try:
+    import yt_dlp
+    YTDLP_AVAILABLE = True
+    print("✅ yt-dlp available — URL transcription enabled")
+except ImportError:
+    YTDLP_AVAILABLE = False
+    print("⚠️  yt-dlp not installed — URL transcription disabled")
 
-app = Flask(__name__)
+import sys
+
+# ── Dynamic paths — work in both dev and PyInstaller one-folder bundle ─────────
+_FROZEN = getattr(sys, 'frozen', False)
+if _FROZEN:
+    _HERE    = Path(sys._MEIPASS)            # read-only: templates, static, compiled modules
+    BASE_DIR = Path(sys.executable).parent   # next to .exe — user-writable
+else:
+    _HERE    = Path(__file__).parent         # meeting_notes_webapp/
+    BASE_DIR = _HERE
+
+ENV_PATH = BASE_DIR / '.env'
+
+# Backend path (only needed in dev; PyInstaller bundles the module automatically)
+if not _FROZEN:
+    sys.path.insert(0, str(_HERE.parent / 'backend'))
+
+try:
+    from simple_speaker_detection import SimpleSpeakerDetector
+    SPEAKER_DETECTION_AVAILABLE = True
+    print("✅ Speaker detection enabled")
+except ImportError as e:
+    SPEAKER_DETECTION_AVAILABLE = False
+    print(f"⚠️  Speaker detection not available: {e}")
+
+load_dotenv(dotenv_path=ENV_PATH)
+
+app = Flask(__name__,
+            template_folder=str(_HERE / 'templates'),
+            static_folder=str(_HERE / 'static'))
 app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['NOTES_FOLDER'] = 'notes'
+app.config['UPLOAD_FOLDER'] = str(BASE_DIR / 'uploads')
+app.config['NOTES_FOLDER']  = str(BASE_DIR / 'notes')
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 
 Path(app.config['UPLOAD_FOLDER']).mkdir(exist_ok=True)
@@ -53,6 +88,16 @@ recording_paused = False
 recording_thread = None
 audio_stream = None
 live_transcript = []
+audio_buffer = []   # (chunk_index, timestamp, audio_np) tuples — for post-recording diarization
+
+# Translator state
+translator_active = False
+translator_paused = False
+translator_thread = None
+
+# NLLB translation model (lazy-loaded on first translator request)
+nllb_tokenizer = None
+nllb_model = None
 
 class BasicNoiseFilter:
     """Basic noise filtering without external libraries"""
@@ -151,8 +196,9 @@ class MeetingAssistant:
         print("Loading AI models...")
         
         try:
-            self.whisper_model = whisper.load_model("base")
-            print("✅ Whisper model loaded")
+            _whisper_size = os.getenv("WHISPER_MODEL", "base")
+            self.whisper_model = whisper.load_model(_whisper_size)
+            print(f"✅ Whisper model loaded ({_whisper_size})")
         except Exception as e:
             print(f"❌ Whisper loading error: {e}")
             self.whisper_model = None
@@ -173,7 +219,13 @@ class MeetingAssistant:
             print("📌 Using BasicNoiseFilter (simpler, more permissive)")
             
         self.setup_ai_providers()
-        
+
+        if SPEAKER_DETECTION_AVAILABLE:
+            self.speaker_detector = SimpleSpeakerDetector()
+            print("✅ Speaker detector initialised")
+        else:
+            self.speaker_detector = None
+
     def setup_ai_providers(self):
         self.providers = {}
 
@@ -188,8 +240,117 @@ class MeetingAssistant:
             except Exception as e:
                 print(f"❌ Groq setup error: {e}")
 
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            try:
+                self.providers['openai'] = OpenAI(api_key=openai_key)
+                print("✅ OpenAI API configured")
+            except Exception as e:
+                print(f"❌ OpenAI setup error: {e}")
+
+        deepseek_key = os.getenv("DEEPSEEK_API_KEY")
+        if deepseek_key:
+            try:
+                self.providers['deepseek'] = OpenAI(
+                    api_key=deepseek_key,
+                    base_url="https://api.deepseek.com/v1"
+                )
+                print("✅ DeepSeek API configured")
+            except Exception as e:
+                print(f"❌ DeepSeek setup error: {e}")
+
         print(f"✅ Available AI providers: {list(self.providers.keys())}")
     
+    def is_gibberish(self, text: str, detected_language: str = None) -> bool:
+        """Return True if *text* looks like a Whisper hallucination or noise artefact.
+
+        Pass detected_language (Whisper ISO code, e.g. 'hi', 'zh', 'ru') so that
+        checks based on Latin-script assumptions are skipped for non-Latin scripts.
+        """
+        import re
+
+        # Languages whose scripts are entirely or mostly non-ASCII / non-Latin.
+        # For these we skip the ASCII-ratio and [a-zA-Z] word checks — they are
+        # meaningless and would incorrectly flag every utterance as gibberish.
+        NON_LATIN_LANGS = {
+            'hi', 'zh', 'ar', 'ja', 'ko', 'ru', 'uk', 'he', 'fa',
+            'th', 'ta', 'te', 'bn', 'ur', 'mn', 'am', 'si', 'my',
+            'km', 'lo', 'gu', 'ml', 'mr', 'ne', 'pa', 'ka', 'hy',
+            'bg', 'mk', 'sr', 'be',
+        }
+        is_non_latin = (detected_language or '').lower() in NON_LATIN_LANGS
+
+        # 0. Universal heavy-repetition check — catches "पर पर पर पर…" loops.
+        #    Apply to ALL languages before any script-specific logic.
+        words = text.split()
+        if len(words) > 8:
+            unique_ratio = len(set(words)) / len(words)
+            if unique_ratio < 0.20:
+                print(f"⚠️  Gibberish (word loop, unique ratio {unique_ratio:.0%}): '{text[:60]}'")
+                return True
+
+        if not is_non_latin:
+            # 1. Non-ASCII ratio — only meaningful for Latin-script languages
+            non_ascii = sum(1 for c in text if ord(c) > 127)
+            if len(text) > 0 and non_ascii / len(text) > 0.15:
+                print(f"⚠️  Gibberish (non-ASCII ratio {non_ascii/len(text):.0%}): '{text}'")
+                return True
+
+            # 2. Real-word ratio — only meaningful for Latin-script languages
+            tokens = words  # already split above
+            if tokens:
+                real_words = sum(1 for t in tokens if re.search(r'[a-zA-Z]', t))
+                if real_words / len(tokens) < 0.5:
+                    print(f"⚠️  Gibberish (real-word ratio {real_words/len(tokens):.0%}): '{text}'")
+                    return True
+
+            # 3. Repetition — unique-word ratio below 30 % for longer utterances
+            if len(tokens) >= 6:
+                unique_ratio = len(set(t.lower() for t in tokens)) / len(tokens)
+                if unique_ratio < 0.30:
+                    print(f"⚠️  Gibberish (repetition, unique ratio {unique_ratio:.0%}): '{text}'")
+                    return True
+
+        else:
+            # For non-Latin scripts: looser repetition check only
+            if len(words) >= 6:
+                unique_ratio = len(set(words)) / len(words)
+                if unique_ratio < 0.30:
+                    print(f"⚠️  Gibberish (non-Latin repetition, unique ratio {unique_ratio:.0%}): '{text[:60]}'")
+                    return True
+
+        # 4. Known Whisper hallucination phrases (mostly English — always apply)
+        HALLUCINATION_PHRASES = [
+            "thank you for watching",
+            "thanks for watching",
+            "please subscribe",
+            "like and subscribe",
+            "don't forget to subscribe",
+            "subtitles by",
+            "transcribed by",
+            "www.",
+            ".com",
+            "♪",
+            "[ music ]",
+            "[music]",
+            "[applause]",
+            "[ applause ]",
+        ]
+        lower = text.lower()
+        for phrase in HALLUCINATION_PHRASES:
+            if phrase in lower:
+                print(f"⚠️  Gibberish (hallucination phrase '{phrase}'): '{text}'")
+                return True
+
+        # 5. Alpha-character ratio — .isalpha() is Unicode-aware so it works for
+        #    Devanagari, Arabic, CJK, Cyrillic etc.  Apply to all languages.
+        alpha = sum(1 for c in text if c.isalpha())
+        if len(text) > 0 and alpha / len(text) < 0.40:
+            print(f"⚠️  Gibberish (alpha ratio {alpha/len(text):.0%}): '{text}'")
+            return True
+
+        return False
+
     def transcribe_audio(self, audio_data):
         """Transcribe with optional noise filtering"""
         if not self.whisper_model:
@@ -218,7 +379,12 @@ class MeetingAssistant:
 
             # Transcribe
             print("🤖 Transcribing with Whisper...")
-            result = self.whisper_model.transcribe(processed_audio)
+            result = self.whisper_model.transcribe(
+                processed_audio,
+                language='en',
+                temperature=0.0,
+                condition_on_previous_text=False,
+            )
             text = result["text"].strip()
 
             print(f"📝 Whisper output: '{text}' (length: {len(text)})")
@@ -226,6 +392,10 @@ class MeetingAssistant:
             # Filter short false positives
             if len(text) < 3:
                 print(f"⚠️  Text too short: '{text}'")
+                return ""
+
+            # Filter gibberish / hallucinations
+            if self.is_gibberish(text):
                 return ""
 
             print(f"✅ Transcription successful: '{text}'")
@@ -260,44 +430,114 @@ class MeetingAssistant:
         except Exception as e:
             print(f"❌ AI analysis error: {e}")
             return self.simple_analysis(text)
-    
     def analyze_with_openai(self, text, provider):
-        prompt = f"""Analyze briefly:
+        word_count = len(text.split())
 
-{text[:2000]}
+        # Scale settings based on transcript length
+        if word_count < 100:
+            scale = "short"
+            max_tokens = 300
+            char_limit = 1000
+        elif word_count < 400:
+            scale = "medium"
+            max_tokens = 600
+            char_limit = 2500
+        elif word_count < 1000:
+            scale = "standard"
+            max_tokens = 900
+            char_limit = 5000
+        else:
+            scale = "long"
+            max_tokens = 1400
+            char_limit = 10000
 
-Return JSON:
-{{
-  "summary": "2-3 sentences",
-  "actions": ["item 1"],
-  "decisions": ["decision 1"],
-  "key_points": ["point 1"]
-}}"""
+        print(f"📊 Smart summary: {word_count} words → scale={scale}, max_tokens={max_tokens}")
+
+        if scale == "short":
+            prompt = f"""Short conversation snippet ({word_count} words). Be concise.
+
+    {text[:char_limit]}
+
+    Return JSON:
+    {{
+    "summary": "1-2 sentence summary",
+    "actions": ["action item if any"],
+    "decisions": ["decision if any"],
+    "key_points": ["main point"]
+    }}"""
+
+        elif scale == "medium":
+            prompt = f"""Short meeting transcript ({word_count} words).
+
+    {text[:char_limit]}
+
+    Return JSON:
+    {{
+    "summary": "2-3 sentence summary of the main discussion",
+    "actions": ["action items with owner if mentioned"],
+    "decisions": ["decisions made"],
+    "key_points": ["2-4 key points discussed"],
+    "topics": ["main topics covered"]
+    }}"""
+
+        elif scale == "standard":
+            prompt = f"""Meeting transcript ({word_count} words). Be thorough.
+
+    {text[:char_limit]}
+
+    Return JSON:
+    {{
+    "summary": "3-5 sentence executive summary of what was discussed and concluded",
+    "actions": ["action items with owner and deadline if mentioned"],
+    "decisions": ["all decisions made"],
+    "key_points": ["5-7 important points"],
+    "topics": ["all main topics covered"],
+    "questions_raised": ["open questions that came up"],
+    "next_steps": ["follow-up items"]
+    }}"""
+
+        else:
+            prompt = f"""Long meeting transcript ({word_count} words). Be comprehensive.
+
+    {text[:char_limit]}
+
+    Return JSON:
+    {{
+    "summary": "4-6 sentence executive summary covering all major themes and outcomes",
+    "actions": ["detailed action items with owner, deadline, and priority"],
+    "decisions": ["all decisions made with context"],
+    "key_points": ["8-12 important points spanning the full discussion"],
+    "topics": ["all topics and subtopics covered"],
+    "questions_raised": ["open questions and unresolved issues"],
+    "next_steps": ["concrete follow-up items"],
+    "insights": ["notable insights or risks mentioned"],
+    "participants_mentioned": ["names of people mentioned"]
+    }}"""
 
         client = self.providers[provider]
-        
+
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "Return ONLY valid JSON, no markdown."},
+                {"role": "system", "content": f"You are an expert meeting analyst. This is a {scale} transcript. Return ONLY valid JSON, no markdown, no extra text."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=400,
+            max_tokens=max_tokens,
             temperature=0.2
         )
-        
+
         content = response.choices[0].message.content
-        
+
         try:
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
-            
+
             return json.loads(content)
         except:
             return self.simple_analysis(text)
-    
+        
     def simple_analysis(self, text):
         sentences = [s.strip() for s in text.split('.') if s.strip()]
         return {
@@ -306,26 +546,290 @@ Return JSON:
             "decisions": [],
             "key_points": sentences[:3]
         }
-    
-    def process_file(self, filepath, options):
+
+    def analyze_upload_with_ai(self, transcript, provider, duration_seconds=None):
+        """
+        Smart summarization for uploaded files.
+        Uses actual duration + map-reduce for long content.
+        """
+        if not transcript or len(transcript.strip()) < 20:
+            return self.simple_analysis(transcript)
+
+        if provider not in self.providers:
+            if self.providers:
+                provider = list(self.providers.keys())[0]
+            else:
+                return self.simple_analysis(transcript)
+
+        word_count = len(transcript.split())
+        duration_min = round(duration_seconds / 60, 1) if duration_seconds else None
+
+        # Determine scale by duration if available, else fall back to word count
+        if duration_seconds:
+            if duration_seconds < 180:        # under 3 min
+                scale = "short"
+            elif duration_seconds < 900:      # 3-15 min
+                scale = "medium"
+            elif duration_seconds < 2700:     # 15-45 min
+                scale = "standard"
+            else:                             # 45+ min
+                scale = "long"
+        else:
+            if word_count < 100:
+                scale = "short"
+            elif word_count < 400:
+                scale = "medium"
+            elif word_count < 1000:
+                scale = "standard"
+            else:
+                scale = "long"
+
+        print(f"📊 Upload summary: {word_count} words, {duration_min}min → scale={scale}")
+
+        # For long content use map-reduce: summarize chunks then combine
+        if scale == "long" and word_count > 2000:
+            return self.map_reduce_summarize(transcript, provider, duration_min)
+
+        # For short/medium/standard use single prompt with duration context
+        duration_context = f"Duration: {duration_min} minutes. " if duration_min else ""
+
+        if scale == "short":
+            max_tokens = 300
+            prompt = f"""{duration_context}Short audio clip transcript ({word_count} words):
+
+{transcript[:1500]}
+
+Return JSON:
+{{
+  "summary": "1-2 sentence summary",
+  "actions": ["action if any"],
+  "decisions": ["decision if any"],
+  "key_points": ["main point"]
+}}"""
+
+        elif scale == "medium":
+            max_tokens = 600
+            prompt = f"""{duration_context}Audio transcript ({word_count} words):
+
+{transcript[:3000]}
+
+Return JSON:
+{{
+  "summary": "2-3 sentence summary",
+  "actions": ["action items with owner if mentioned"],
+  "decisions": ["decisions made"],
+  "key_points": ["3-5 key points"],
+  "topics": ["main topics covered"]
+}}"""
+
+        else:  # standard
+            max_tokens = 900
+            prompt = f"""{duration_context}Meeting transcript ({word_count} words):
+
+{transcript[:6000]}
+
+Return JSON:
+{{
+  "summary": "3-5 sentence executive summary",
+  "actions": ["action items with owner and deadline if mentioned"],
+  "decisions": ["all decisions made"],
+  "key_points": ["5-8 key points"],
+  "topics": ["all main topics covered"],
+  "questions_raised": ["open questions"],
+  "next_steps": ["follow-up items"]
+}}"""
+
         try:
-            result = self.whisper_model.transcribe(filepath)
-            transcript = result["text"]
-            
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    self._call_ai,
+                    prompt,
+                    provider,
+                    max_tokens,
+                    f"Expert meeting analyst. {duration_context}Return ONLY valid JSON."
+                )
+                result = future.result(timeout=60)
+                return result
+        except Exception as e:
+            print(f"❌ Upload AI error: {e}")
+            return self.simple_analysis(transcript)
+
+    def map_reduce_summarize(self, transcript, provider, duration_min=None):
+        """
+        For long transcripts: summarize in chunks then combine.
+        Prevents cutting off the last 80% of a long meeting.
+        """
+        print(f"🗺️  Using map-reduce for long transcript...")
+
+        # Split transcript into chunks of ~1500 words each
+        words = transcript.split()
+        chunk_size = 1500
+        chunks = []
+        for i in range(0, len(words), chunk_size):
+            chunk = ' '.join(words[i:i + chunk_size])
+            chunks.append(chunk)
+
+        print(f"   Split into {len(chunks)} chunks")
+
+        # MAP phase: summarize each chunk
+        chunk_summaries = []
+        for i, chunk in enumerate(chunks):
+            print(f"   Summarizing chunk {i+1}/{len(chunks)}...")
+            chunk_prompt = f"""Summarize this section of a meeting transcript (part {i+1} of {len(chunks)}):
+
+{chunk}
+
+Return JSON:
+{{
+  "summary": "2-3 sentence summary of this section",
+  "actions": ["action items in this section"],
+  "decisions": ["decisions in this section"],
+  "key_points": ["2-4 key points from this section"]
+}}"""
+
+            try:
+                result = self._call_ai(chunk_prompt, provider, 400,
+                                       "Summarize meeting transcript sections. Return ONLY valid JSON.")
+                if result and result.get('summary'):
+                    chunk_summaries.append(result)
+            except Exception as e:
+                print(f"   ⚠️ Chunk {i+1} failed: {e}")
+                continue
+
+            time.sleep(1)
+
+        if not chunk_summaries:
+            return self.simple_analysis(transcript)
+
+        # REDUCE phase: combine all chunk summaries into final summary
+        print(f"   Combining {len(chunk_summaries)} chunk summaries...")
+
+        all_summaries = "\n\n".join([
+            f"Section {i+1}: {s.get('summary', '')}"
+            for i, s in enumerate(chunk_summaries)
+        ])
+
+        all_actions = []
+        all_decisions = []
+        all_key_points = []
+        for s in chunk_summaries:
+            all_actions.extend(s.get('actions', []))
+            all_decisions.extend(s.get('decisions', []))
+            all_key_points.extend(s.get('key_points', []))
+
+        duration_context = f"Total duration: {duration_min} minutes." if duration_min else ""
+
+        reduce_prompt = f"""{duration_context}
+This is a long meeting broken into {len(chunks)} sections.
+Here are summaries of each section:
+
+{all_summaries}
+
+Combine these into a final comprehensive meeting report.
+
+Return JSON:
+{{
+  "summary": "4-6 sentence executive summary covering the entire meeting",
+  "actions": {json.dumps(list(dict.fromkeys(all_actions)))},
+  "decisions": {json.dumps(list(dict.fromkeys(all_decisions)))},
+  "key_points": ["8-12 most important points from the whole meeting"],
+  "topics": ["all major topics covered across all sections"],
+  "questions_raised": ["open questions from any section"],
+  "next_steps": ["all follow-up items"],
+  "insights": ["notable patterns or insights across the meeting"]
+}}"""
+
+        try:
+            final = self._call_ai(reduce_prompt, provider, 1400,
+                                  "Expert meeting analyst combining section summaries. Return ONLY valid JSON.")
+            return final if final else self.simple_analysis(transcript)
+        except Exception as e:
+            print(f"❌ Reduce phase error: {e}")
+            return self.simple_analysis(transcript)
+
+    def _call_ai(self, prompt, provider, max_tokens, system_prompt):
+        """Reusable AI call with JSON parsing"""
+        client = self.providers[provider]
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=max_tokens,
+            temperature=0.2
+        )
+
+        content = response.choices[0].message.content
+
+        try:
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+            return json.loads(content)
+        except:
+            return self.simple_analysis(content)
+
+    def process_file(self, filepath, options):
+        import re
+        try:
+            result = self.whisper_model.transcribe(
+                filepath,
+                language='en',
+                temperature=0.0,
+                condition_on_previous_text=False,
+            )
+            raw_transcript = result["text"]
+
+            # Get actual duration from Whisper result
+            duration_seconds = None
+            if result.get('segments'):
+                last_segment = result['segments'][-1]
+                duration_seconds = last_segment.get('end', None)
+                print(f"⏱️  Detected duration: {duration_seconds:.1f}s ({duration_seconds/60:.1f}min)")
+
+            # --- sentence-level gibberish filter + deduplication ---
+            sentences = re.split(r'(?<=[.!?])\s+', raw_transcript.strip())
+            seen = set()
+            clean_sentences = []
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                if self.is_gibberish(sentence):
+                    print(f"⚠️  Filtered gibberish sentence from file: '{sentence}'")
+                    continue
+                key = sentence.lower()
+                if key in seen:
+                    print(f"⚠️  Duplicate sentence removed: '{sentence}'")
+                    continue
+                seen.add(key)
+                clean_sentences.append(sentence)
+
+            transcript = ' '.join(clean_sentences)
+            # --------------------------------------------------------
+
             analysis = {"summary": "", "actions": [], "decisions": [], "key_points": []}
-            
+
             if options.get('generateSummary', True):
                 provider = options.get('model', 'groq')
-                analysis = self.analyze_with_ai(transcript, provider, timeout=45)
-            
+                analysis = self.analyze_upload_with_ai(transcript, provider, duration_seconds)
+
             return {
                 "transcript": transcript,
                 "summary": analysis.get("summary", ""),
                 "actions": analysis.get("actions", []),
                 "decisions": analysis.get("decisions", []),
-                "key_points": analysis.get("key_points", [])
+                "key_points": analysis.get("key_points", []),
+                "topics": analysis.get("topics", []),
+                "questions_raised": analysis.get("questions_raised", []),
+                "next_steps": analysis.get("next_steps", []),
+                "duration_seconds": duration_seconds
             }
-            
+
         except Exception as e:
             raise
     
@@ -341,10 +845,157 @@ Return JSON:
 
 assistant = MeetingAssistant()
 
+
+# ── First-Run Setup ────────────────────────────────────────────────────────────
+
+def is_setup_complete():
+    """Return True if any supported AI provider key is present."""
+    for var in ('GROQ_API_KEY', 'OPENAI_API_KEY', 'DEEPSEEK_API_KEY'):
+        key = os.environ.get(var, '').strip()
+        if key and not key.startswith('your-'):
+            return True
+    return False
+
+
+@app.before_request
+def check_setup():
+    """Redirect to /setup when no API key is configured."""
+    allowed_endpoints = {'setup', 'setup_save', 'static'}
+    if request.endpoint in allowed_endpoints:
+        return None
+    if not is_setup_complete():
+        return redirect(url_for('setup'))
+    return None
+
+
+_PROVIDER_KEY_VAR = {
+    'groq':     'GROQ_API_KEY',
+    'openai':   'OPENAI_API_KEY',
+    'deepseek': 'DEEPSEEK_API_KEY',
+}
+_PROVIDER_BASE_URL = {
+    'groq':     'https://api.groq.com/openai/v1',
+    'openai':   None,
+    'deepseek': 'https://api.deepseek.com/v1',
+}
+_PROVIDER_DEFAULT_MODEL = {
+    'groq':     'llama-3.3-70b-versatile',
+    'openai':   'gpt-4o-mini',
+    'deepseek': 'deepseek-chat',
+}
+
+
+def _current_provider():
+    return os.environ.get('AI_PROVIDER', 'groq')
+
+
+def _masked_key():
+    provider = _current_provider()
+    key = os.environ.get(_PROVIDER_KEY_VAR.get(provider, 'GROQ_API_KEY'), '')
+    if len(key) > 12:
+        return key[:8] + '****' + key[-4:]
+    return '(not set)' if not key else '****'
+
+
+@app.route('/api/validate-key', methods=['POST'])
+def validate_key():
+    """Test an API key against the chosen provider without saving it."""
+    data     = request.get_json(silent=True) or {}
+    api_key  = data.get('api_key', '').strip()
+    provider = data.get('provider', 'groq')
+
+    if provider not in _PROVIDER_KEY_VAR:
+        return jsonify({'valid': False, 'error': 'Unknown provider.'})
+    if not api_key:
+        return jsonify({'valid': False, 'error': 'API key is required.'})
+
+    try:
+        kwargs = {'api_key': api_key}
+        base   = _PROVIDER_BASE_URL.get(provider)
+        if base:
+            kwargs['base_url'] = base
+        client = OpenAI(**kwargs)
+        client.models.list()          # lightweight — just verifies auth
+        return jsonify({'valid': True})
+    except Exception as exc:
+        msg = str(exc)
+        if any(t in msg.lower() for t in ('401', 'invalid_api_key', 'authentication', 'unauthorized', 'incorrect')):
+            return jsonify({'valid': False, 'error': 'Invalid API key — please check and try again.'})
+        return jsonify({'valid': False, 'error': f'Connection error: {msg[:140]}'})
+
+
+@app.route('/setup', methods=['GET'])
+def setup():
+    provider = _current_provider()
+    return render_template('setup.html',
+                           already_configured=is_setup_complete(),
+                           api_key_masked=_masked_key(),
+                           whisper_model=os.environ.get('WHISPER_MODEL', 'base'),
+                           ai_provider=provider,
+                           error=None)
+
+
+@app.route('/setup', methods=['POST'])
+def setup_save():
+    api_key    = request.form.get('api_key', '').strip()
+    model_size = request.form.get('whisper_model', 'base')
+    provider   = request.form.get('ai_provider', 'groq')
+
+    if provider not in _PROVIDER_KEY_VAR:
+        provider = 'groq'
+
+    if not api_key:
+        return render_template('setup.html',
+                               already_configured=is_setup_complete(),
+                               api_key_masked=_masked_key(),
+                               whisper_model=model_size,
+                               ai_provider=provider,
+                               error='API key is required.')
+
+    key_var  = _PROVIDER_KEY_VAR[provider]
+    ai_model = _PROVIDER_DEFAULT_MODEL[provider]
+
+    env_content = (
+        f"{key_var}={api_key}\n"
+        f"AI_PROVIDER={provider}\n"
+        f"AI_MODEL={ai_model}\n"
+        f"WHISPER_MODEL={model_size}\n"
+    )
+    ENV_PATH.write_text(env_content, encoding='utf-8')
+
+    load_dotenv(dotenv_path=ENV_PATH, override=True)
+    os.environ[key_var]          = api_key
+    os.environ['WHISPER_MODEL']  = model_size
+    os.environ['AI_PROVIDER']    = provider
+    os.environ['AI_MODEL']       = ai_model
+
+    assistant.setup_ai_providers()
+    return redirect('/')
+
+
+@app.route('/api/settings')
+def get_settings():
+    provider = _current_provider()
+    return jsonify({
+        'api_key_masked': _masked_key(),
+        'whisper_model':  os.environ.get('WHISPER_MODEL', 'base'),
+        'ai_model':       os.environ.get('AI_MODEL', _PROVIDER_DEFAULT_MODEL.get(provider, '')),
+        'ai_provider':    provider,
+    })
+
+
 # Routes
 @app.route('/')
-def index():
-    return render_template('index.html')
+def home():
+    return render_template('home.html')
+
+@app.route('/meeting')
+def meeting():
+    return render_template('meeting.html')
+
+@app.route('/translator')
+def translator():
+    return render_template('translator.html')
 
 @app.route('/api/devices')
 def get_devices():
@@ -476,6 +1127,8 @@ def process_file():
             "title": filename,
             "timestamp": datetime.now().isoformat(),
             "source": "upload",
+            "duration": f"{round(result.get('duration_seconds', 0) / 60, 1)} min"
+                        if result.get('duration_seconds') else "N/A",
             **result
         }
         
@@ -491,6 +1144,179 @@ def process_file():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/notes/<note_id>/chat', methods=['POST'])
+def chat_with_note(note_id):
+    try:
+        note_file = Path(app.config['NOTES_FOLDER']) / f"{note_id}.json"
+        if not note_file.exists():
+            return jsonify({"error": "Note not found"}), 404
+
+        with open(note_file, 'r', encoding='utf-8') as f:
+            note_data = json.load(f)
+
+        transcript = note_data.get('transcript', '')
+        if not transcript or len(transcript.strip()) < 20:
+            return jsonify({"error": "This note has no transcript to chat with"}), 400
+
+        data = request.json
+        question = data.get('question', '').strip()
+        chat_history = data.get('history', [])
+
+        if not question:
+            return jsonify({"error": "No question provided"}), 400
+
+        messages = [
+            {
+                "role": "system",
+                "content": f"""You are a helpful meeting assistant.
+Answer questions based ONLY on the meeting transcript provided.
+If the answer is not in the transcript, say "I couldn't find that in this meeting's transcript."
+Be concise and direct. Use bullet points for lists.
+
+MEETING TRANSCRIPT:
+{transcript[:8000]}
+
+MEETING SUMMARY (for context):
+{note_data.get('summary', 'No summary available')}"""
+            }
+        ]
+
+        for msg in chat_history[-6:]:
+            messages.append({
+                "role": msg['role'],
+                "content": msg['content']
+            })
+
+        messages.append({
+            "role": "user",
+            "content": question
+        })
+
+        provider = 'groq'
+        if provider not in assistant.providers:
+            if assistant.providers:
+                provider = list(assistant.providers.keys())[0]
+            else:
+                return jsonify({"error": "No AI provider available"}), 500
+
+        client = assistant.providers[provider]
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            max_tokens=500,
+            temperature=0.3
+        )
+
+        answer = response.choices[0].message.content
+
+        return jsonify({
+            "answer": answer,
+            "question": question
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/process-url', methods=['POST'])
+def process_url():
+    try:
+        if not YTDLP_AVAILABLE:
+            return jsonify({"error": "yt-dlp is not installed on this server"}), 501
+
+        data = request.json
+        url = data.get('url', '').strip()
+
+        if not url:
+            return jsonify({"error": "No URL provided"}), 400
+
+        if not url.startswith(('http://', 'https://')):
+            return jsonify({"error": "Invalid URL — must start with http:// or https://"}), 400
+
+        upload_dir = Path(app.config['UPLOAD_FOLDER'])
+        output_template = str(upload_dir / '%(title)s.%(ext)s')
+
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': output_template,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'quiet': True,
+            'no_warnings': True,
+        }
+
+        print(f"📥 Downloading audio from: {url}")
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            video_title = info.get('title', 'Unknown Title')
+            duration = info.get('duration', 0)
+
+            # yt-dlp changes the extension after postprocessing
+            filename = ydl.prepare_filename(info)
+            audio_path = Path(filename).with_suffix('.mp3')
+
+        if not audio_path.exists():
+            return jsonify({"error": "Audio download failed — file not found after conversion"}), 500
+
+        print(f"✅ Downloaded: {video_title} ({duration}s)")
+
+        socketio.emit('url_processing_status', {
+            'status': 'transcribing',
+            'message': f'Transcribing: {video_title}...'
+        })
+
+        options = {
+            'generateSummary': data.get('generateSummary', True),
+            'model': data.get('model', 'groq')
+        }
+
+        result = assistant.process_file(str(audio_path), options)
+
+        notes_data = {
+            "title": video_title,
+            "timestamp": datetime.now().isoformat(),
+            "source": "url",
+            "url": url,
+            "duration": duration,
+            **result
+        }
+
+        notes_file = assistant.save_notes(notes_data, "url")
+
+        # Clean up the downloaded file
+        try:
+            audio_path.unlink()
+        except Exception:
+            pass
+
+        return jsonify({
+            **result,
+            "title": video_title,
+            "duration": duration,
+            "notes_file": notes_file
+        })
+
+    except yt_dlp.utils.DownloadError as e:
+        error_msg = str(e)
+        if 'Private video' in error_msg:
+            return jsonify({"error": "This video is private"}), 400
+        elif 'not available' in error_msg:
+            return jsonify({"error": "Video not available in your region"}), 400
+        else:
+            return jsonify({"error": f"Download failed: {error_msg[:200]}"}), 500
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/generate-summary', methods=['POST'])
 def generate_summary():
     try:
@@ -499,7 +1325,10 @@ def generate_summary():
         if not live_transcript:
             return jsonify({"error": "No transcript available"}), 400
 
-        full_text = " ".join([entry['text'] for entry in live_transcript])
+        full_text = " ".join([
+            f"{entry.get('speaker', 'Speaker 1')}: {entry['text']}"
+            for entry in live_transcript
+        ])
 
         if len(full_text) < 20:
             return jsonify({"error": "Transcript too short"}), 400
@@ -511,7 +1340,10 @@ def generate_summary():
             "title": f"Live Meeting {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             "timestamp": datetime.now().isoformat(),
             "source": "live",
-            "transcript": "\n".join([f"[{e['timestamp']}] {e['text']}" for e in live_transcript]),
+            "transcript": "\n".join([
+                f"[{e['timestamp']}] {e.get('speaker', 'Speaker 1')}: {e['text']}"
+                for e in live_transcript
+            ]),
             **analysis
         }
 
@@ -687,16 +1519,25 @@ Generated by Smart Meeting Notes
 
 @socketio.on('start_recording')
 def handle_start_recording(data):
-    global recording_active, recording_paused, recording_thread, live_transcript
-    
+    global recording_active, recording_paused, recording_thread, live_transcript, audio_buffer
+
+    if translator_active:
+        emit('error', {'message': 'Translator is running. Stop it first.'})
+        return
+
     if recording_active:
         emit('error', {'message': 'Recording already in progress'})
         return
-    
+
     recording_active = True
     recording_paused = False
     live_transcript = []
-    
+    audio_buffer = []
+
+    if assistant.speaker_detector:
+        assistant.speaker_detector.reset()
+        print("🔄 Speaker detector reset for new meeting")
+
     recording_thread = threading.Thread(
         target=record_audio,
         args=(data.get('deviceId', 0), data.get('type', 'microphone'))
@@ -711,10 +1552,21 @@ def handle_start_recording(data):
 
 @socketio.on('stop_recording')
 def handle_stop_recording():
-    global recording_active
+    global recording_active, recording_thread
     recording_active = False
     emit('recording_status', {'status': 'Recording stopped'})
-    emit('recording_complete', {'message': 'Click "Generate Summary" to analyze'})
+    emit('speaker_detection_start', {'message': 'Analyzing speakers... please wait'})
+
+    # Run diarization in a background thread so the UI stays responsive.
+    # We wait for the recording thread to fully drain its last chunk first.
+    def diarize_after_stop():
+        if recording_thread and recording_thread.is_alive():
+            recording_thread.join(timeout=15)
+        run_speaker_diarization()
+
+    diarization_thread = threading.Thread(target=diarize_after_stop)
+    diarization_thread.daemon = True
+    diarization_thread.start()
 
 @socketio.on('pause_recording')
 def handle_pause_recording():
@@ -735,8 +1587,301 @@ def handle_reset_transcript():
     print("🔄 Transcript reset by user")
     emit('recording_status', {'status': 'Ready to record'})
 
+@socketio.on('start_translator')
+def handle_start_translator(data):
+    global recording_active, translator_active, translator_paused, translator_thread
+
+    if recording_active:
+        emit('translator_error', {'message': 'Meeting recording is in progress. Stop it first.'})
+        return
+
+    if translator_active:
+        emit('translator_error', {'message': 'Translator already running'})
+        return
+
+    translator_active = True
+    translator_paused = False
+
+    translator_thread = threading.Thread(
+        target=run_translator,
+        args=(data.get('deviceId', 0), data.get('sourceLang', 'auto'), data.get('targetLang', 'English'))
+    )
+    translator_thread.daemon = True
+    translator_thread.start()
+
+    emit('translator_status', {'status': 'Translator started'})
+
+
+@socketio.on('stop_translator')
+def handle_stop_translator():
+    global translator_active
+    translator_active = False
+    emit('translator_status', {'status': 'Translator stopped'})
+
+
+@socketio.on('pause_translator')
+def handle_pause_translator():
+    global translator_paused
+    translator_paused = True
+    emit('translator_status', {'status': 'Paused'})
+
+
+@socketio.on('resume_translator')
+def handle_resume_translator():
+    global translator_paused
+    translator_paused = False
+    emit('translator_status', {'status': 'Translating...'})
+
+
+@socketio.on('save_translator_note')
+def handle_save_translator_note(data):
+    try:
+        segments = data.get('segments', [])
+        source_lang = data.get('sourceLang', 'Auto')
+        target_lang = data.get('targetLang', 'English')
+
+        original_text = '\n'.join(
+            f"[{s.get('timestamp', '')}] {s.get('original', '')}" for s in segments
+        )
+        translated_text = '\n'.join(
+            f"[{s.get('timestamp', '')}] {s.get('translated', '')}" for s in segments
+        )
+
+        notes_data = {
+            "title": f"Translation {source_lang}→{target_lang} — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            "timestamp": datetime.now().isoformat(),
+            "source": "translator",
+            "source_language": source_lang,
+            "target_language": target_lang,
+            "transcript": original_text,
+            "translated_transcript": translated_text,
+            "summary": f"Live translation session from {source_lang} to {target_lang}. {len(segments)} segments captured.",
+            "actions": [],
+            "decisions": [],
+            "key_points": [],
+            "segments": segments
+        }
+
+        filename = assistant.save_notes(notes_data, "translator")
+        emit('translator_note_saved', {'filename': filename, 'success': True})
+
+    except Exception as e:
+        print(f"❌ Save translator note error: {e}")
+        emit('translator_error', {'message': f'Failed to save: {str(e)}'})
+
+
+# ── NLLB Language Mappings ────────────────────────────────────────────────
+
+WHISPER_TO_NLLB = {
+    "en": "eng_Latn",
+    "hi": "hin_Deva",
+    "es": "spa_Latn",
+    "fr": "fra_Latn",
+    "de": "deu_Latn",
+    "zh": "zho_Hans",
+    "ar": "arb_Arab",
+    "pt": "por_Latn",
+    "ja": "jpn_Jpan",
+    "ko": "kor_Hang",
+    "it": "ita_Latn",
+    "ru": "rus_Cyrl",
+    "tr": "tur_Latn",
+    "nl": "nld_Latn",
+    "ne": "npi_Deva",
+    "bn": "ben_Beng",
+    "ur": "urd_Arab",
+    "pa": "pan_Guru",
+}
+
+LANGUAGE_NAMES = {
+    "en": "English", "hi": "Hindi", "es": "Spanish",
+    "fr": "French", "de": "German", "zh": "Chinese",
+    "ar": "Arabic", "pt": "Portuguese", "ja": "Japanese",
+    "ko": "Korean", "it": "Italian", "ru": "Russian",
+    "tr": "Turkish", "nl": "Dutch", "ne": "Nepali",
+    "bn": "Bengali", "ur": "Urdu", "pa": "Punjabi",
+}
+
+
+def get_nllb_model():
+    global nllb_tokenizer, nllb_model
+    if nllb_model is None:
+        print("🔄 Loading NLLB-200 translation model...")
+        from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+        nllb_tokenizer = AutoTokenizer.from_pretrained("facebook/nllb-200-distilled-600M")
+        nllb_model = AutoModelForSeq2SeqLM.from_pretrained("facebook/nllb-200-distilled-600M")
+        print("✅ NLLB-200 loaded")
+    return nllb_tokenizer, nllb_model
+
+
+def translate_with_nllb(text, src_lang_whisper, tgt_lang_whisper):
+    if not text or not text.strip():
+        return text
+    if src_lang_whisper == tgt_lang_whisper:
+        return text
+
+    src_nllb = WHISPER_TO_NLLB.get(src_lang_whisper)
+    tgt_nllb = WHISPER_TO_NLLB.get(tgt_lang_whisper)
+
+    if not src_nllb or not tgt_nllb:
+        print(f"⚠️ Unsupported language pair: {src_lang_whisper} → {tgt_lang_whisper}")
+        return text
+
+    try:
+        tokenizer, model = get_nllb_model()
+
+        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+
+        target_lang_id = tokenizer.convert_tokens_to_ids(tgt_nllb)
+
+        translated_tokens = model.generate(
+            **inputs,
+            forced_bos_token_id=target_lang_id,
+            max_length=512
+        )
+
+        translated = tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
+        print(f"✅ Translated [{src_lang_whisper}→{tgt_lang_whisper}]: {translated[:60]}")
+        return translated
+
+    except Exception as e:
+        print(f"❌ NLLB translation error: {e}")
+        return text
+
+
+def translate_text(text, source_lang, target_lang):
+    """Translate text via Groq. Returns original on error or same-language shortcut."""
+    if source_lang != 'auto' and source_lang == target_lang:
+        return text
+    if 'groq' not in assistant.providers:
+        return text
+    try:
+        src_label = f"from {source_lang}" if source_lang != 'auto' else ""
+        prompt = (
+            f"Translate the following text {src_label} to {target_lang}. "
+            f"Return ONLY the translated text, no explanations:\n\n{text}"
+        )
+        client = assistant.providers['groq']
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are a professional translator. Translate accurately to {target_lang}. "
+                        "Return ONLY the translation, nothing else."
+                    )
+                },
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300,
+            temperature=0.1
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"⚠️ Translation error: {e}")
+        return text
+
+
+def run_translator(device_id, source_lang, target_lang):
+    global translator_active, translator_paused
+
+    # Frontend now sends ISO codes directly (e.g. 'en', 'hi', 'auto')
+    whisper_lang = None if source_lang == 'auto' else source_lang
+    target_lang_code = target_lang
+
+    print(f"\n🌐 Starting translator: {source_lang} → {target_lang} ({target_lang_code}) (device {device_id})")
+
+    p = pyaudio.PyAudio()
+    stream = None
+
+    try:
+        stream = p.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=16000,
+            input=True,
+            input_device_index=device_id,
+            frames_per_buffer=16000 * 5
+        )
+
+        print("✅ Translator audio stream opened")
+
+        while translator_active:
+            if translator_paused:
+                time.sleep(0.1)
+                continue
+
+            audio_data = stream.read(16000 * 5, exception_on_overflow=False)
+            audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+
+            if np.mean(np.abs(audio_np)) < 0.002:
+                continue
+
+            if not assistant.whisper_model:
+                continue
+
+            transcribe_kwargs = {
+                'fp16': False,
+                'temperature': 0.0,
+                'condition_on_previous_text': False,
+            }
+            if whisper_lang:
+                transcribe_kwargs['language'] = whisper_lang
+
+            result = assistant.whisper_model.transcribe(audio_np, **transcribe_kwargs)
+            original = result['text'].strip()
+            detected_lang = result.get('language', source_lang)
+
+            print(f"🔍 Whisper detected language: '{detected_lang}', text: '{original[:60]}'")
+
+            if not original or len(original) < 3:
+                continue
+
+            if assistant.is_gibberish(original, detected_language=detected_lang):
+                print(f"⚠️  Translator: gibberish filtered for lang='{detected_lang}'")
+                continue
+
+            # Translate using local NLLB model (no API key needed)
+            was_translated = False
+            translated = original
+            if detected_lang != target_lang_code:
+                translated = translate_with_nllb(original, detected_lang, target_lang_code)
+                was_translated = True
+
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            print(f"📤 Emitting translator_update [{detected_lang}→{target_lang_code}]: {translated[:50]}")
+
+            socketio.emit('translator_update', {
+                'original': original,
+                'translated': translated,
+                'source_lang': detected_lang,
+                'source_lang_name': LANGUAGE_NAMES.get(detected_lang, detected_lang),
+                'target_lang': target_lang_code,
+                'was_translated': was_translated,
+                'speaker': '',
+                'timestamp': timestamp,
+            })
+
+            time.sleep(0.1)
+
+    except Exception as e:
+        print(f"❌ Translator error: {e}")
+        import traceback
+        traceback.print_exc()
+        socketio.emit('translator_error', {'message': str(e)})
+
+    finally:
+        if stream:
+            stream.stop_stream()
+            stream.close()
+        p.terminate()
+        print("✅ Translator stopped cleanly")
+        socketio.emit('translator_stopped', {})
+
+
 def record_audio(device_id, capture_type):
-    global recording_active, recording_paused, audio_stream, live_transcript
+    global recording_active, recording_paused, audio_stream, live_transcript, audio_buffer
 
     print(f"\n{'='*60}")
     print(f"🎙️  Starting recording from device {device_id} ({capture_type})")
@@ -775,20 +1920,32 @@ def record_audio(device_id, capture_type):
 
             print(f"📦 Audio chunk size: {len(audio_np)} samples")
 
+            # Store raw audio for post-recording diarization
+            audio_buffer.append({
+                'timestamp': datetime.now().strftime("%H:%M:%S"),
+                'chunk_index': chunk_count,
+                'audio': audio_np.copy(),
+            })
+
             transcript = assistant.transcribe_audio(audio_np)
 
             if transcript:
                 timestamp = datetime.now().strftime("%H:%M:%S")
+                speaker = "Analyzing..."   # will be updated after diarization
+
                 live_transcript.append({
                     'timestamp': timestamp,
-                    'text': transcript
+                    'text': transcript,
+                    'speaker': speaker,
+                    'chunk_index': chunk_count,
                 })
 
                 print(f"🎯 Emitting transcript update: [{timestamp}] {transcript}")
 
                 socketio.emit('transcript_update', {
                     'timestamp': timestamp,
-                    'text': transcript
+                    'text': transcript,
+                    'speaker': speaker,
                 })
             else:
                 print("⚠️  No transcript generated for this chunk")
@@ -807,6 +1964,59 @@ def record_audio(device_id, capture_type):
             audio_stream.close()
         p.terminate()
         print("✅ Recording stopped cleanly")
+
+def run_speaker_diarization():
+    """Process full audio buffer after recording to assign speaker labels."""
+    global audio_buffer, live_transcript
+
+    # Emit recording_complete so the Generate Summary button always appears
+    def finish():
+        socketio.emit('recording_complete', {'message': 'Click "Generate Summary" to analyze'})
+
+    if not audio_buffer or not SPEAKER_DETECTION_AVAILABLE:
+        print("ℹ️  Skipping diarization (no audio or resemblyzer unavailable)")
+        finish()
+        return
+
+    try:
+        print("🔍 Running post-recording speaker diarization...")
+
+        # Fresh detector for each diarization pass
+        detector = SimpleSpeakerDetector()
+
+        # Map chunk_index → detected speaker
+        chunk_speakers = {}
+        for chunk_data in audio_buffer:
+            chunk_idx = chunk_data['chunk_index']
+            audio = chunk_data['audio']
+
+            if np.sqrt(np.mean(audio ** 2)) > 0.01:
+                speaker = detector.detect_speaker(audio)
+            else:
+                speaker = detector.last_speaker  # carry forward last known speaker
+
+            chunk_speakers[chunk_idx] = speaker
+            print(f"  Chunk {chunk_idx}: {speaker}")
+
+        # Patch live_transcript entries with the detected speaker labels
+        for entry in live_transcript:
+            chunk_idx = entry.get('chunk_index', 1)
+            entry['speaker'] = chunk_speakers.get(chunk_idx, 'Speaker 1')
+
+        print(f"✅ Speaker diarization complete — {len(chunk_speakers)} chunks processed")
+
+        socketio.emit('speaker_detection_complete', {
+            'transcript': live_transcript
+        })
+
+    except Exception as e:
+        print(f"❌ Speaker diarization error: {e}")
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        finish()
+
 
 if __name__ == '__main__':
     print("\n" + "="*50)

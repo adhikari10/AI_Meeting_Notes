@@ -1,0 +1,183 @@
+/* ── Reset & Base ─────────────────────────────────────────── */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    color: #333;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* ── Global Navbar ───────────────────────────────────────── */
+.navbar {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.nav-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #667eea;
+    text-decoration: none;
+}
+
+.nav-brand i {
+    font-size: 1.8rem;
+}
+
+.nav-links {
+    display: flex;
+    gap: 20px;
+}
+
+.nav-link {
+    text-decoration: none;
+    color: #666;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 25px;
+    transition: all 0.3s ease;
+}
+
+.nav-link:hover,
+.nav-link.active {
+    background: #667eea;
+    color: white;
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn-primary, .btn-success, .btn-danger, .btn-warning, .btn-info {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 25px;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.3s ease;
+}
+
+.btn-primary  { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+.btn-success  { background: linear-gradient(135deg, #4CAF50 0%, #2E7D32  100%); color: white; }
+.btn-danger   { background: linear-gradient(135deg, #f44336 0%, #d32f2f  100%); color: white; }
+.btn-warning  { background: linear-gradient(135deg, #FF9800 0%, #F57C00  100%); color: white; }
+.btn-info     { background: linear-gradient(135deg, #2196F3 0%, #1565C0  100%); color: white; }
+
+.btn-primary:hover, .btn-success:hover,
+.btn-danger:hover,  .btn-warning:hover, .btn-info:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.btn-primary:disabled, .btn-success:disabled, .btn-danger:disabled,
+.btn-warning:disabled, .btn-info:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+.footer {
+    background: rgba(255, 255, 255, 0.95);
+    padding: 20px;
+    text-align: center;
+    margin-top: 60px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.footer-content p {
+    margin: 10px 0;
+    color: #666;
+}
+
+.footer-links {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-top: 15px;
+}
+
+.footer-links a {
+    color: #667eea;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: color 0.3s ease;
+}
+
+.footer-links a:hover {
+    color: #764ba2;
+}
+
+/* ── Loading Spinner ─────────────────────────────────────── */
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+}
+
+.loading:before {
+    content: "";
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 10px;
+}
+
+/* ── Shared Keyframes ────────────────────────────────────── */
+@keyframes spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .nav-links {
+        gap: 8px;
+    }
+    .nav-link span {
+        display: none;
+    }
+}

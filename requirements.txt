@@ -1,13 +1,31 @@
-openai-whisper
-PyAudioWPatch>=0.2.12.7
-openai>=1.0.0
-groq               # Groq API for AI summaries
-python-dotenv
-rich
+# Speech / transcription
+faster-whisper
+webrtcvad
+noisereduce
+scipy>=1.10.0
 numpy
+
+# Audio I/O
+PyAudioWPatch>=0.2.12.7
+ffmpeg-python
+
+# AI / LLM
+openai>=1.0.0
+groq
+python-dotenv
+
+# Web app
 flask
 flask-socketio
 flask-cors
-webrtcvad          # Voice Activity Detection
-noisereduce        # Noise reduction
-scipy>=1.10.0
+
+# YouTube ingestion
+yt-dlp
+
+# Utils
+rich
+
+# Desktop launcher
+pywebview>=4.0
+pyinstaller>=6.0
+Pillow>=10.0        # for create_icon.py

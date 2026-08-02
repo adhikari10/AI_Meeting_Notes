@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if already_configured %}API Settings{% else %}Welcome Setup{% endif %} — Meeting Notes AI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1030 50%, #0f0f1a 100%);
+            padding: 24px;
+        }
+
+        .setup-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 20px;
+            padding: 44px 40px;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+            backdrop-filter: blur(12px);
+        }
+
+        /* ── Logo ── */
+        .setup-logo {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 28px;
+        }
+        .logo-icon {
+            width: 50px; height: 50px;
+            border-radius: 13px;
+            background: linear-gradient(135deg, #7c3aed, #a855f7);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px; color: #fff; flex-shrink: 0;
+        }
+        .logo-text h1 { font-size: 1.15rem; font-weight: 700; color: #fff; line-height: 1.2; }
+        .logo-text p  { font-size: 0.76rem; color: rgba(255,255,255,0.4); }
+
+        /* ── Heading ── */
+        .setup-heading { margin-bottom: 24px; }
+        .setup-heading h2 { font-size: 1.45rem; font-weight: 700; color: #fff; }
+        .setup-heading p  { font-size: 0.86rem; color: rgba(255,255,255,0.5); margin-top: 6px; line-height: 1.55; }
+        .setup-heading code { color: #a78bfa; font-size: 0.82rem; }
+
+        /* ── Banners ── */
+        .banner {
+            border-radius: 10px;
+            padding: 11px 15px;
+            margin-bottom: 18px;
+            font-size: 0.83rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            line-height: 1.4;
+        }
+        .banner i { margin-top: 2px; flex-shrink: 0; }
+        .banner-error   { background: rgba(239,68,68,0.12);  border: 1px solid rgba(239,68,68,0.35);  color: #fca5a5; }
+        .banner-success { background: rgba(34,197,94,0.12);  border: 1px solid rgba(34,197,94,0.35);  color: #86efac; }
+
+        /* ── Form ── */
+        .form-group { margin-bottom: 20px; }
+
+        .form-group label {
+            display: block;
+            font-size: 0.78rem; font-weight: 600;
+            color: rgba(255,255,255,0.65);
+            margin-bottom: 7px;
+            letter-spacing: 0.04em; text-transform: uppercase;
+        }
+
+        .input-wrap { position: relative; }
+        .input-wrap .input-icon {
+            position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+            color: rgba(255,255,255,0.28); font-size: 13px; pointer-events: none;
+        }
+        .input-wrap input,
+        .input-wrap select {
+            width: 100%;
+            background: rgba(255,255,255,0.065);
+            border: 1px solid rgba(255,255,255,0.11);
+            border-radius: 10px;
+            padding: 11px 42px 11px 38px;
+            font-family: 'Poppins', monospace;
+            font-size: 0.88rem; color: #fff;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            appearance: none;
+        }
+        .input-wrap input::placeholder { color: rgba(255,255,255,0.22); }
+        .input-wrap input:focus,
+        .input-wrap select:focus {
+            border-color: #7c3aed;
+            box-shadow: 0 0 0 3px rgba(124,58,237,0.18);
+        }
+        .input-wrap input.valid   { border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,0.15); }
+        .input-wrap input.invalid { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
+        .input-wrap select option { background: #1a1030; color: #fff; }
+
+        /* right-side status icon inside key input */
+        .key-status {
+            position: absolute; right: 42px; top: 50%; transform: translateY(-50%);
+            font-size: 14px; display: none;
+        }
+        .key-status.spin  { display: block; color: rgba(255,255,255,0.5); animation: spin 0.8s linear infinite; }
+        .key-status.ok    { display: block; color: #22c55e; }
+        .key-status.fail  { display: block; color: #ef4444; }
+
+        @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+
+        /* eye toggle */
+        .toggle-visibility {
+            position: absolute; right: 11px; top: 50%; transform: translateY(-50%);
+            background: none; border: none; cursor: pointer;
+            color: rgba(255,255,255,0.3); font-size: 13px; padding: 4px;
+            transition: color 0.2s;
+        }
+        .toggle-visibility:hover { color: rgba(255,255,255,0.65); }
+
+        /* provider hint + key hint below fields */
+        .field-hint {
+            margin-top: 5px; font-size: 0.75rem;
+            color: rgba(255,255,255,0.32);
+        }
+        .field-hint a { color: #a78bfa; text-decoration: none; }
+        .field-hint a:hover { text-decoration: underline; }
+
+        /* validation message below key field */
+        .key-msg {
+            margin-top: 6px; font-size: 0.77rem;
+            min-height: 16px;
+            transition: color 0.2s;
+        }
+        .key-msg.ok   { color: #86efac; }
+        .key-msg.fail { color: #fca5a5; }
+
+        /* ── Buttons ── */
+        .btn-row { display: flex; gap: 10px; margin-top: 6px; }
+
+        .btn {
+            flex: 1; padding: 12px 16px;
+            border: none; border-radius: 10px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.88rem; font-weight: 600;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 7px;
+            transition: opacity 0.2s, transform 0.1s, background 0.2s;
+        }
+        .btn:active { transform: scale(0.985); }
+
+        .btn-test {
+            background: rgba(124,58,237,0.18);
+            border: 1px solid rgba(124,58,237,0.4);
+            color: #c4b5fd;
+        }
+        .btn-test:hover:not(:disabled) { background: rgba(124,58,237,0.28); }
+
+        .btn-save {
+            background: linear-gradient(135deg, #7c3aed, #a855f7);
+            color: #fff;
+        }
+        .btn-save:hover:not(:disabled) { opacity: 0.88; }
+        .btn-save:disabled {
+            opacity: 0.35; cursor: not-allowed;
+            filter: grayscale(0.4);
+        }
+
+        /* ── Divider & footer ── */
+        .divider { height: 1px; background: rgba(255,255,255,0.07); margin: 24px 0; }
+        .back-link { text-align: center; margin-top: 16px; }
+        .back-link a { font-size: 0.8rem; color: rgba(255,255,255,0.35); text-decoration: none; transition: color 0.2s; }
+        .back-link a:hover { color: rgba(255,255,255,0.7); }
+
+        .privacy-note { font-size: 0.74rem; color: rgba(255,255,255,0.25); text-align: center; line-height: 1.55; }
+        .privacy-note i { margin-right: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="setup-card">
+
+    <!-- Logo -->
+    <div class="setup-logo">
+        <div class="logo-icon"><i class="fas fa-microphone-lines"></i></div>
+        <div class="logo-text">
+            <h1>Meeting Notes AI</h1>
+            <p>Powered by Whisper &amp; Groq / OpenAI / DeepSeek</p>
+        </div>
+    </div>
+
+    <!-- Heading — different for first-run vs returning user -->
+    <div class="setup-heading">
+        {% if already_configured %}
+            <h2>Update your API settings</h2>
+            <p>Change your API key or switch provider and model.<br>
+               Current key: <code>{{ api_key_masked }}</code></p>
+        {% else %}
+            <h2>Welcome! Let's get started.</h2>
+            <p>Choose an AI provider and paste your API key.<br>
+               All keys are stored only on <em>this computer</em> — never uploaded.</p>
+        {% endif %}
+    </div>
+
+    <!-- Server-side error (e.g. empty key on POST) -->
+    {% if error %}
+    <div class="banner banner-error">
+        <i class="fas fa-circle-exclamation"></i>
+        <span>{{ error }}</span>
+    </div>
+    {% endif %}
+
+    <!-- JS feedback banner (hidden by default) -->
+    <div id="js-banner" class="banner" style="display:none;">
+        <i id="js-banner-icon" class="fas fa-circle-check"></i>
+        <span id="js-banner-msg"></span>
+    </div>
+
+    <!-- Form -->
+    <form id="setup-form" method="POST" action="/setup" onsubmit="return handleSubmit(event)">
+
+        <!-- AI Provider -->
+        <div class="form-group">
+            <label for="ai_provider">AI Provider</label>
+            <div class="input-wrap">
+                <i class="fas fa-robot input-icon"></i>
+                <select id="ai_provider" name="ai_provider" onchange="onProviderChange()">
+                    <option value="groq"     {% if ai_provider == 'groq'     %}selected{% endif %}>Groq (free, fast — recommended)</option>
+                    <option value="openai"   {% if ai_provider == 'openai'   %}selected{% endif %}>OpenAI (GPT-4o-mini)</option>
+                    <option value="deepseek" {% if ai_provider == 'deepseek' %}selected{% endif %}>DeepSeek</option>
+                </select>
+            </div>
+            <p class="field-hint" id="provider-hint"></p>
+        </div>
+
+        <!-- API Key -->
+        <div class="form-group">
+            <label for="api_key">API Key</label>
+            <div class="input-wrap">
+                <i class="fas fa-key input-icon"></i>
+                <input type="password"
+                       id="api_key"
+                       name="api_key"
+                       placeholder="Paste your API key here…"
+                       autocomplete="off"
+                       spellcheck="false"
+                       oninput="onKeyInput()">
+                <span class="key-status" id="key-status"><i id="key-status-icon" class="fas fa-circle-notch"></i></span>
+                <button type="button" class="toggle-visibility" onclick="toggleKey()" title="Show / hide key">
+                    <i class="fas fa-eye" id="eye-icon"></i>
+                </button>
+            </div>
+            <!-- validation message -->
+            <div class="key-msg" id="key-msg"></div>
+            <p class="field-hint" id="key-hint">
+                <i class="fas fa-arrow-up-right-from-square"></i>
+                <a id="key-link" href="https://console.groq.com/keys" target="_blank" rel="noopener">
+                    Get your free Groq API key here
+                </a>
+                &mdash; no credit card required.
+            </p>
+        </div>
+
+        <!-- Whisper Model -->
+        <div class="form-group">
+            <label for="whisper_model">Whisper Model Size</label>
+            <div class="input-wrap">
+                <i class="fas fa-sliders input-icon"></i>
+                <select id="whisper_model" name="whisper_model">
+                    <option value="tiny"   {% if whisper_model == 'tiny'   %}selected{% endif %}>tiny   — fastest, lowest accuracy (~75 MB)</option>
+                    <option value="base"   {% if whisper_model == 'base'   %}selected{% endif %}>base   — good balance (~145 MB)  ★ recommended</option>
+                    <option value="small"  {% if whisper_model == 'small'  %}selected{% endif %}>small  — better accuracy, slower (~465 MB)</option>
+                    <option value="medium" {% if whisper_model == 'medium' %}selected{% endif %}>medium — best accuracy, very slow (~1.5 GB)</option>
+                </select>
+            </div>
+            <p class="field-hint">Runs locally. Model change takes effect on next launch.</p>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="btn-row">
+            <button type="button" class="btn btn-test" id="btn-test" onclick="testKey()">
+                <i class="fas fa-flask-vial"></i> Test Key
+            </button>
+            <button type="submit" class="btn btn-save" id="btn-save" disabled>
+                <i class="fas fa-floppy-disk"></i>
+                {% if already_configured %}Update Settings{% else %}Save &amp; Launch{% endif %}
+            </button>
+        </div>
+
+    </form>
+
+    {% if already_configured %}
+    <div class="back-link">
+        <a href="/"><i class="fas fa-arrow-left"></i> Back to app</a>
+    </div>
+    {% endif %}
+
+    <div class="divider"></div>
+
+    <p class="privacy-note">
+        <i class="fas fa-lock"></i>
+        Your key is stored in a local <code>.env</code> file on this computer.
+        It is sent only to the chosen AI provider — never anywhere else.
+    </p>
+
+</div><!-- /setup-card -->
+
+<script>
+// ── Provider metadata ──────────────────────────────────────────────────────────
+const PROVIDERS = {
+    groq:     { hint: 'Free tier available. Fastest inference.',   link: 'https://console.groq.com/keys',           linkText: 'Get your free Groq API key here',     placeholder: 'gsk_…' },
+    openai:   { hint: 'Requires a paid OpenAI account.',           link: 'https://platform.openai.com/api-keys',    linkText: 'Get your OpenAI API key here',         placeholder: 'sk-…'  },
+    deepseek: { hint: 'Low-cost alternative with strong models.',  link: 'https://platform.deepseek.com/api_keys',  linkText: 'Get your DeepSeek API key here',       placeholder: 'sk-…'  },
+};
+
+let keyValidated = false;   // becomes true after a successful Test Key call
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    onProviderChange();
+    {% if already_configured %}
+    // Returning user: pre-enable Save so they can click through without re-testing
+    enableSave();
+    {% endif %}
+});
+
+function onProviderChange() {
+    const p    = document.getElementById('ai_provider').value;
+    const meta = PROVIDERS[p];
+    document.getElementById('provider-hint').textContent = meta.hint;
+    document.getElementById('api_key').placeholder       = meta.placeholder;
+    document.getElementById('key-link').href             = meta.link;
+    document.getElementById('key-link').textContent      = meta.linkText;
+    // Reset validation state when provider changes
+    resetKeyState();
+}
+
+function onKeyInput() {
+    // If user edits the key after a successful test, require re-validation
+    if (keyValidated) resetKeyState();
+}
+
+// ── Key visibility toggle ──────────────────────────────────────────────────────
+function toggleKey() {
+    const input = document.getElementById('api_key');
+    const icon  = document.getElementById('eye-icon');
+    const show  = input.type === 'text';
+    input.type  = show ? 'password' : 'text';
+    icon.className = show ? 'fas fa-eye' : 'fas fa-eye-slash';
+}
+
+// ── Status helpers ─────────────────────────────────────────────────────────────
+function setKeyStatus(state, msg) {
+    const wrap   = document.getElementById('key-status');
+    const icon   = document.getElementById('key-status-icon');
+    const msgEl  = document.getElementById('key-msg');
+    const keyEl  = document.getElementById('api_key');
+
+    wrap.className  = 'key-status ' + (state || '');
+    keyEl.className = state === 'ok' ? 'valid' : state === 'fail' ? 'invalid' : '';
+    msgEl.className = 'key-msg ' + (state || '');
+    msgEl.textContent = msg || '';
+
+    if (state === 'spin') {
+        icon.className = 'fas fa-circle-notch';
+    } else if (state === 'ok') {
+        icon.className = 'fas fa-circle-check';
+    } else if (state === 'fail') {
+        icon.className = 'fas fa-circle-xmark';
+    }
+}
+
+function showBanner(type, msg) {
+    const banner  = document.getElementById('js-banner');
+    const iconEl  = document.getElementById('js-banner-icon');
+    const msgEl   = document.getElementById('js-banner-msg');
+
+    banner.className     = 'banner banner-' + type;
+    iconEl.className     = type === 'success' ? 'fas fa-circle-check' : 'fas fa-circle-exclamation';
+    msgEl.textContent    = msg;
+    banner.style.display = 'flex';
+}
+
+function hideBanner() {
+    document.getElementById('js-banner').style.display = 'none';
+}
+
+function resetKeyState() {
+    keyValidated = false;
+    setKeyStatus('', '');
+    disableSave();
+    hideBanner();
+}
+
+function enableSave() {
+    document.getElementById('btn-save').disabled = false;
+}
+function disableSave() {
+    document.getElementById('btn-save').disabled = true;
+}
+
+// ── Test Key ───────────────────────────────────────────────────────────────────
+async function testKey() {
+    const key      = document.getElementById('api_key').value.trim();
+    const provider = document.getElementById('ai_provider').value;
+    const btnTest  = document.getElementById('btn-test');
+
+    if (!key) {
+        setKeyStatus('fail', 'Please paste your API key first.');
+        return;
+    }
+
+    hideBanner();
+    setKeyStatus('spin', 'Testing key…');
+    btnTest.disabled = true;
+    btnTest.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Testing…';
+
+    try {
+        const resp = await fetch('/api/validate-key', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ api_key: key, provider }),
+        });
+        const data = await resp.json();
+
+        if (data.valid) {
+            keyValidated = true;
+            setKeyStatus('ok', '✓ Key is valid and working.');
+            enableSave();
+            showBanner('success', 'API key verified! Click Save to apply your settings.');
+        } else {
+            keyValidated = false;
+            setKeyStatus('fail', data.error || 'Key validation failed.');
+            disableSave();
+            showBanner('error', data.error || 'Invalid API key.');
+        }
+    } catch (err) {
+        keyValidated = false;
+        setKeyStatus('fail', 'Network error — is the app running?');
+        disableSave();
+    } finally {
+        btnTest.disabled = false;
+        btnTest.innerHTML = '<i class="fas fa-flask-vial"></i> Test Key';
+    }
+}
+
+// ── Form submit ────────────────────────────────────────────────────────────────
+function handleSubmit(event) {
+    const key = document.getElementById('api_key').value.trim();
+
+    // Allow submit if returning user left the field empty (keep existing key)
+    {% if already_configured %}
+    if (!key) return true;  // empty = "keep current key" — but server requires it, so block
+    {% endif %}
+
+    if (!key) {
+        event.preventDefault();
+        setKeyStatus('fail', 'API key is required.');
+        return false;
+    }
+
+    if (!keyValidated) {
+        event.preventDefault();
+        showBanner('error', 'Please click "Test Key" to verify your key before saving.');
+        return false;
+    }
+
+    // Valid — let the form submit normally
+    document.getElementById('btn-save').innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Saving…';
+    return true;
+}
+</script>
+
+</body>
+</html>

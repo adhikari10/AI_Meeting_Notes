@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Smart Meeting Notes{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+    <!-- Global Navbar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">
+                <i class="fas fa-robot"></i>
+                <span>Smart Meeting Notes</span>
+            </a>
+            <div class="nav-links">
+                <a href="/meeting" class="nav-link {% block active_meeting %}{% endblock %}">
+                    <i class="fas fa-microphone"></i> <span>Meeting</span>
+                </a>
+                <a href="/translator" class="nav-link {% block active_translator %}{% endblock %}">
+                    <i class="fas fa-language"></i> <span>Translator</span>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Page Content -->
+    {% block content %}{% endblock %}
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p>🤖 Smart Meeting Notes — AI-Powered Note Taker</p>
+            <p class="footer-links">
+                <a href="#"><i class="fab fa-github"></i> GitHub</a>
+                <a href="#"><i class="fas fa-question-circle"></i> Help</a>
+                <a href="/setup"><i class="fas fa-cog"></i> Settings</a>
+            </p>
+        </div>
+    </footer>
+
+    <!-- Socket.IO (available to all pages) -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    {% block extra_js %}{% endblock %}
+
+</body>
+</html>

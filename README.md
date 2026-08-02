@@ -59,103 +59,68 @@ AI_note_taker/
 - Microphone or audio input device
 - Groq API key (free) OR DeepSeek/OpenAI API key
 
-## Installation
+## Installation & Launch (Windows)
 
-### 1. Clone the Repository
+### New user — one-time setup
+
+1. **Install Python 3.10+** from [python.org](https://python.org) if you don't have it.
+
+2. **Double-click `install.bat`**
+
+   This will:
+   - Create a `venv/` virtual environment
+   - Install all dependencies from `requirements.txt`
+   - Create a **"Meeting Notes AI"** shortcut on your Desktop
+
+3. **Double-click the Desktop shortcut** (or `run_app.bat`) to launch.
+
+4. On first launch, a setup page appears — enter your API key and you're done.
+   The app opens in its own window (no browser needed).
+
+> **Get a free Groq API key:** [console.groq.com/keys](https://console.groq.com/keys) — no credit card required.
+
+---
+
+### Files added for launching
+
+| File | Purpose |
+|---|---|
+| `install.bat` | One-time setup — creates venv, installs deps, creates Desktop shortcut |
+| `run_app.bat` | Daily launcher — finds Python in venv and starts the app |
+| `create_shortcut.ps1` | PowerShell script called by `install.bat` to create the Desktop shortcut |
+| `launcher.py` | Python entry point — starts Flask in background, opens pywebview window |
+
+---
+
+### Manual launch (developers)
 
 ```bash
-git clone <your-repo-url>
-cd AI_note_taker
-```
-
-### 2. Create Virtual Environment
-
-```bash
+# One-time
 python -m venv venv
-```
-
-### 3. Activate Virtual Environment
-
-**Windows:**
-```bash
 venv\Scripts\activate
-```
-
-**macOS/Linux:**
-```bash
-source venv/bin/activate
-```
-
-### 4. Install Dependencies
-
-```bash
 pip install -r requirements.txt
+
+# Every launch
+venv\Scripts\python.exe launcher.py
 ```
 
-**Note:** Installing PyAudio on Windows may require additional steps:
-- Download the appropriate `.whl` file from [here](https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio)
-- Install with: `pip install PyAudio-0.2.11-cpXX-cpXXm-win_amd64.whl`
-
-### 5. Configure Environment Variables
-
-Create a `.env` file in the project root (or copy `.env.example`):
-
-```env
-# Groq API (Fast & Free - Recommended)
-GROQ_API_KEY=your-groq-api-key-here
-AI_PROVIDER=groq
-AI_MODEL=llama-3.3-70b-versatile
-
-# Alternative: DeepSeek API (Cheap)
-# DEEPSEEK_API_KEY=your-deepseek-api-key-here
-# AI_PROVIDER=deepseek
-# AI_MODEL=deepseek-chat
-
-# Alternative: OpenAI API
-# OPENAI_API_KEY=your-openai-api-key-here
-# AI_PROVIDER=openai
-# AI_MODEL=gpt-3.5-turbo
-
-# Whisper Model (tiny, base, small, medium, large)
-WHISPER_MODEL=base
-```
-
-**Get API Keys:**
-- Groq (Free): [https://console.groq.com](https://console.groq.com)
-- DeepSeek: [https://platform.deepseek.com](https://platform.deepseek.com)
-- OpenAI: [https://platform.openai.com](https://platform.openai.com)
-
-## Usage
-
-### Option 1: Web Application (Recommended)
-
-The web application provides an easy-to-use interface with live capture and file upload capabilities.
+Or run the web server directly (browser-only, no desktop window):
 
 ```bash
 cd meeting_notes_webapp
 python app.py
+# then open http://localhost:5000
 ```
 
-Then open your browser to: **http://localhost:5000**
+---
 
-**Features:**
-- **Home** - Dashboard with feature overview
-- **Live Capture** - Record meetings in real-time
-  - Capture from speaker output (Zoom/Teams/Meet)
-  - Capture from microphone (in-person meetings)
-  - Live transcription and AI analysis
-- **Upload** - Upload audio/video files for processing
-  - Supports MP3, WAV, M4A, MP4, AVI, MOV
-  - Batch processing
-  - AI-powered summarization
-- **My Notes** - View and manage all saved notes
-  - Search and filter
-  - Download as text
-  - View full transcripts and analysis
+### Changing your API key
 
-### Option 2: CLI Backend
+Click **Settings** in the footer of the app at any time, or go to `http://localhost:5000/setup`.
 
-For power users who prefer terminal interfaces:
+---
+
+### CLI Backend (power users)
 
 ```bash
 cd backend
@@ -164,19 +129,10 @@ python main.py
 
 **Workflow:**
 1. Select audio device from the list
-2. Start meeting - recording begins automatically
+2. Start meeting — recording begins automatically
 3. See live transcription and AI analysis in the terminal
 4. Press `Ctrl+C` to stop and generate final report
 5. Meeting notes saved to `backend/meeting_notes/`
-
-### Test Your Microphone
-
-```bash
-cd backend
-python start.py
-```
-
-This will record for 3 seconds and verify your microphone is working.
 
 ## Output Files
 

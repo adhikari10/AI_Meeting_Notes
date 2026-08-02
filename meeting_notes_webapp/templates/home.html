@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Smart Meeting Notes — Home{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+{% endblock %}
+
+{% block content %}
+<main class="home-main">
+
+    <div class="home-hero">
+        <h1><i class="fas fa-robot"></i> Smart Meeting Notes</h1>
+        <p class="home-tagline">
+            AI-powered transcription, summarization, speaker detection,
+            and real-time translation — all in one place.
+        </p>
+    </div>
+
+    <div class="mode-cards">
+
+        <a href="/meeting" class="mode-card">
+            <div class="mode-icon">
+                <i class="fas fa-microphone"></i>
+            </div>
+            <h2>Meeting Notes</h2>
+            <p>
+                Record live meetings, upload audio files, transcribe video URLs,
+                and chat with your saved notes using AI.
+            </p>
+            <span class="mode-btn">
+                Open <i class="fas fa-arrow-right"></i>
+            </span>
+        </a>
+
+        <a href="/translator" class="mode-card">
+            <div class="mode-icon">
+                <i class="fas fa-language"></i>
+            </div>
+            <h2>Translator</h2>
+            <p>
+                Real-time live translation with automatic language detection —
+                break language barriers in any meeting.
+            </p>
+            <span class="mode-btn">
+                Open <i class="fas fa-arrow-right"></i>
+            </span>
+        </a>
+
+    </div>
+
+    <!-- API Key / Settings strip -->
+    <div class="settings-strip" id="settings-strip">
+        <div class="settings-strip-inner">
+            <span class="settings-label">
+                <i class="fas fa-key"></i>
+                API Key: <code id="api-key-display">loading…</code>
+            </span>
+            <a href="/setup" class="settings-btn">
+                <i class="fas fa-pen-to-square"></i> Change API Key
+            </a>
+        </div>
+    </div>
+
+</main>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+fetch('/api/settings')
+    .then(r => r.json())
+    .then(d => {
+        document.getElementById('api-key-display').textContent = d.api_key_masked;
+    })
+    .catch(() => {
+        document.getElementById('api-key-display').textContent = '(unavailable)';
+    });
+</script>
+{% endblock %}
