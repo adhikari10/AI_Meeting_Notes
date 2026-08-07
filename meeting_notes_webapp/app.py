@@ -10,6 +10,11 @@ os.environ["PATH"] = r"C:\ProgramData\chocolatey\bin" + os.pathsep + os.environ.
 # Default (unset/false) is the existing desktop behaviour, unchanged.
 CLOUD_MODE = os.getenv("CLOUD_MODE", "false").strip().lower() == "true"
 
+# STATELESS=true disables server-side note persistence entirely (for hosted
+# deployments with no durable storage): a note exists only in the browser
+# response that created it. Independent of CLOUD_MODE.
+STATELESS = os.getenv("STATELESS", "false").strip().lower() == "true"
+
 import json
 import time
 import threading
@@ -1290,6 +1295,9 @@ def process_file():
                 **result
             }
 
+            if STATELESS:
+                return jsonify(notes_data)
+
             notes_file = assistant.save_notes(notes_data, "upload")
 
             return jsonify({
@@ -1313,18 +1321,27 @@ def process_file():
 @app.route('/api/notes/<note_id>/chat', methods=['POST'])
 def chat_with_note(note_id):
     try:
-        note_file = Path(app.config['NOTES_FOLDER']) / f"{note_id}.json"
-        if not note_file.exists():
-            return jsonify({"error": "Note not found"}), 404
+        data = request.json
 
-        with open(note_file, 'r', encoding='utf-8') as f:
-            note_data = json.load(f)
+        if STATELESS:
+            # No server-side note to load by id — the caller sends the
+            # transcript (and optional summary) straight in the request body.
+            transcript = data.get('transcript', '')
+            summary = data.get('summary', 'No summary available')
+        else:
+            note_file = Path(app.config['NOTES_FOLDER']) / f"{note_id}.json"
+            if not note_file.exists():
+                return jsonify({"error": "Note not found"}), 404
 
-        transcript = note_data.get('transcript', '')
+            with open(note_file, 'r', encoding='utf-8') as f:
+                note_data = json.load(f)
+
+            transcript = note_data.get('transcript', '')
+            summary = note_data.get('summary', 'No summary available')
+
         if not transcript or len(transcript.strip()) < 20:
             return jsonify({"error": "This note has no transcript to chat with"}), 400
 
-        data = request.json
         question = data.get('question', '').strip()
         chat_history = data.get('history', [])
 
@@ -1343,7 +1360,7 @@ MEETING TRANSCRIPT:
 {transcript[:8000]}
 
 MEETING SUMMARY (for context):
-{note_data.get('summary', 'No summary available')}"""
+{summary}"""
             }
         ]
 
@@ -1455,6 +1472,9 @@ def process_url():
                 **result
             }
 
+            if STATELESS:
+                return jsonify(notes_data)
+
             notes_file = assistant.save_notes(notes_data, "url")
 
             return jsonify({
@@ -1516,6 +1536,9 @@ def generate_summary():
             **analysis
         }
 
+        if STATELESS:
+            return jsonify(notes_data)
+
         notes_file = assistant.save_notes(notes_data, "live")
 
         return jsonify({
@@ -1532,6 +1555,9 @@ def generate_summary():
 def get_notes():
     """Get all saved notes"""
     try:
+        if STATELESS:
+            return jsonify([])
+
         notes_dir = Path(app.config['NOTES_FOLDER'])
         notes = []
 
@@ -1579,6 +1605,9 @@ def get_notes():
 def get_note(note_id):
     """Get a specific note by ID"""
     try:
+        if STATELESS:
+            return jsonify({"error": "Note not found"}), 404
+
         note_file = Path(app.config['NOTES_FOLDER']) / f"{note_id}.json"
 
         if not note_file.exists():
@@ -1625,6 +1654,9 @@ def get_note(note_id):
 def delete_note(note_id):
     """Delete a specific note"""
     try:
+        if STATELESS:
+            return jsonify({"error": "Note not found"}), 404
+
         note_file = Path(app.config['NOTES_FOLDER']) / f"{note_id}.json"
 
         if not note_file.exists():
@@ -1640,6 +1672,9 @@ def delete_note(note_id):
 def download_note(note_id):
     """Download a note as a text file"""
     try:
+        if STATELESS:
+            return jsonify({"error": "Note not found"}), 404
+
         note_file = Path(app.config['NOTES_FOLDER']) / f"{note_id}.json"
 
         if not note_file.exists():
