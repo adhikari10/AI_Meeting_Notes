@@ -30,19 +30,20 @@ document.addEventListener('DOMContentLoaded', function() {
         loadAudioDevices();
     }
     setupSocketEvents();
-    switchSection('capture');   // default to capture (no home section here)
+    // Cloud mode has no Live Capture / My Notes sections (see meeting.html),
+    // so default straight to Upload there instead of the now-absent Capture.
+    switchSection(window.CLOUD_MODE ? 'upload' : 'capture');
 });
 
 function setupNavigation() {
-    // Only attach to sub-nav links (hash hrefs) — leaves global nav links alone
-    const navLinks = document.querySelectorAll('.nav-link[href^="#"]');
-    navLinks.forEach(link => {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
-            const target = this.getAttribute('href').substring(1);
+    // Sidebar nav items (data-view) — leaves footer/settings links alone
+    const navItems = document.querySelectorAll('.nav-item[data-view]');
+    navItems.forEach(item => {
+        item.addEventListener('click', function() {
+            const target = this.dataset.view;
             switchSection(target);
 
-            navLinks.forEach(l => l.classList.remove('active'));
+            navItems.forEach(n => n.classList.remove('active'));
             this.classList.add('active');
 
             if (target === 'notes') {
@@ -81,31 +82,16 @@ async function loadAudioDevices() {
         const devices = await response.json();
 
         const deviceList = document.getElementById('deviceList');
-        deviceList.innerHTML = '';
+        deviceList.innerHTML = '<option value="" disabled selected>Select a device…</option>';
 
-        devices.forEach(device => {
-            const deviceElement = document.createElement('div');
-            deviceElement.className = 'device-item';
-            deviceElement.innerHTML = `
-                <div class="device-name">${device.name}</div>
-                <div class="device-info">Inputs: ${device.inputs} | Sample Rate: ${device.rate}Hz</div>
-            `;
-            deviceElement.addEventListener('click', () => selectDevice(device.id, deviceElement));
-            deviceList.appendChild(deviceElement);
+        devices.forEach((device, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = `${device.name} (Inputs: ${device.inputs} | ${device.rate}Hz)`;
+            deviceList.appendChild(option);
         });
     } catch (error) {
         console.error('Error loading devices:', error);
-    }
-}
-
-function selectDevice(deviceId, element) {
-    if (element.classList.contains('selected')) {
-        element.classList.remove('selected');
-    } else {
-        document.querySelectorAll('.device-item').forEach(item => {
-            item.classList.remove('selected');
-        });
-        element.classList.add('selected');
     }
 }
 
@@ -121,14 +107,14 @@ function startRecording() {
         return;
     }
 
-    const selectedDevice = document.querySelector('.device-item.selected');
-    if (!selectedDevice) {
+    const deviceList = document.getElementById('deviceList');
+    if (!deviceList.value) {
         alert('Please select an audio device!');
         return;
     }
 
     const captureType = selectedOption.value;
-    const deviceId = Array.from(document.querySelectorAll('.device-item')).indexOf(selectedDevice);
+    const deviceId = parseInt(deviceList.value, 10);
 
     socket.emit('start_recording', {
         type: captureType,
@@ -310,9 +296,47 @@ function getSpeakerColor(speaker) {
         'Speaker 2': '#2196F3',
         'Speaker 3': '#FF9800',
         'Speaker 4': '#E91E63',
+        'Speaker A': '#4CAF50',
+        'Speaker B': '#2196F3',
+        'Speaker C': '#FF9800',
+        'Speaker D': '#E91E63',
         'Analyzing...': '#9E9E9E',
     };
     return colors[speaker] || '#9C27B0';
+}
+
+// Renders a transcript string into one colored entry per speaker turn when
+// it's in the "Speaker X: ..." per-line format (AssemblyAI upload path).
+// Falls back to plain text for an unlabeled, flat transcript (Groq path).
+function renderSpeakerTranscript(container, text) {
+    if (!text) {
+        container.textContent = 'No transcript available';
+        return;
+    }
+
+    const lines = text.split('\n').filter(line => line.trim());
+    const speakerLine = /^(Speaker\s+\S+):\s*(.*)$/;
+    const parsed = lines.map(line => line.match(speakerLine));
+
+    if (lines.length > 1 && parsed.every(Boolean)) {
+        container.innerHTML = '';
+        parsed.forEach(match => {
+            const [, speaker, utterance] = match;
+            const div = document.createElement('div');
+            div.className = 'transcript-entry';
+
+            const label = document.createElement('span');
+            label.className = 'speaker-label';
+            label.style.color = getSpeakerColor(speaker);
+            label.textContent = speaker + ':';
+
+            div.appendChild(label);
+            div.appendChild(document.createTextNode(' ' + utterance));
+            container.appendChild(div);
+        });
+    } else {
+        container.textContent = text;
+    }
 }
 
 function showSpeakerAnalysisStatus(message) {
@@ -593,11 +617,36 @@ function updateProgress(percent, text) {
 }
 
 function showResults(result) {
-    document.getElementById('fileTranscript').textContent = result.transcript || 'No transcript available';
+    renderSpeakerTranscript(document.getElementById('fileTranscript'), result.transcript);
     document.getElementById('fileSummary').innerHTML = renderAnalysis(result);
     document.getElementById('fileActions').innerHTML = formatActions(result.actions);
     document.getElementById('resultsContainer').style.display = 'block';
     window.lastResult = result;
+
+    // Chat works off window.lastResult directly (sent inline with each
+    // question), so it's available immediately even if the note was never
+    // persisted server-side — e.g. STATELESS/cloud deployments.
+    currentChatNoteId = 'current';
+    resetChatUI();
+}
+
+// Shared by the just-generated results view and the saved-note detail view.
+function resetChatUI() {
+    chatHistory = [];
+    const chatMessages = document.getElementById('chatMessages');
+    if (chatMessages) {
+        chatMessages.innerHTML = `
+            <div class="chat-welcome">
+                <i class="fas fa-robot"></i>
+                <p>Ask me anything about this meeting!</p>
+                <div class="chat-suggestions">
+                    <button onclick="askSuggestion('What were the main decisions made?')">What were the main decisions?</button>
+                    <button onclick="askSuggestion('What are the action items?')">What are the action items?</button>
+                    <button onclick="askSuggestion('Give me a brief summary')">Give me a brief summary</button>
+                    <button onclick="askSuggestion('What questions were raised?')">What questions were raised?</button>
+                </div>
+            </div>`;
+    }
 }
 
 function escapeHtml(str) {
@@ -668,8 +717,14 @@ ${window.lastResult.transcript || ''}
 SUMMARY:
 ${window.lastResult.summary || ''}
 
+KEY POINTS:
+${(window.lastResult.key_points || []).map(p => '- ' + p).join('\n')}
+
 ACTION ITEMS:
 ${(window.lastResult.actions || []).map(a => '- ' + a).join('\n')}
+
+DECISIONS:
+${(window.lastResult.decisions || []).map(d => '- ' + d).join('\n')}
 
 Generated by Smart Meeting Notes
 Date: ${new Date().toLocaleString()}
@@ -738,21 +793,7 @@ async function loadNotes() {
 async function loadNoteDetails(noteId) {
     // Reset chat state for the newly selected note
     currentChatNoteId = noteId;
-    chatHistory = [];
-    const chatMessages = document.getElementById('chatMessages');
-    if (chatMessages) {
-        chatMessages.innerHTML = `
-            <div class="chat-welcome">
-                <i class="fas fa-robot"></i>
-                <p>Ask me anything about this meeting!</p>
-                <div class="chat-suggestions">
-                    <button onclick="askSuggestion('What were the main decisions made?')">What were the main decisions?</button>
-                    <button onclick="askSuggestion('What are the action items?')">What are the action items?</button>
-                    <button onclick="askSuggestion('Give me a brief summary')">Give me a brief summary</button>
-                    <button onclick="askSuggestion('What questions were raised?')">What questions were raised?</button>
-                </div>
-            </div>`;
-    }
+    resetChatUI();
 
     try {
         const response = await fetch(`/api/notes/${noteId}`);
@@ -764,13 +805,16 @@ async function loadNoteDetails(noteId) {
             return;
         }
 
+        // Chat sends the transcript/summary inline, sourced from here.
+        window.lastResult = note;
+
         document.getElementById('detailTitle').textContent = note.title || 'Meeting Notes';
         document.getElementById('detailDate').textContent = note.date || 'N/A';
         document.getElementById('detailDuration').textContent = note.duration || 'N/A';
         document.getElementById('detailType').textContent = note.type || 'N/A';
         document.getElementById('detailSize').textContent = note.size || 'N/A';
 
-        document.getElementById('detailTranscriptContent').textContent = note.transcript || 'No transcript available';
+        renderSpeakerTranscript(document.getElementById('detailTranscriptContent'), note.transcript);
         document.getElementById('detailSummaryContent').innerHTML = renderAnalysis(note);
         document.getElementById('detailActionsContent').innerHTML = formatActions(note.actions);
         document.getElementById('detailAnalysisContent').textContent = note.analysis || 'No analysis available';
@@ -894,7 +938,12 @@ async function sendChatMessage() {
         const response = await fetch(`/api/notes/${currentChatNoteId}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: question, history: chatHistory })
+            body: JSON.stringify({
+                question: question,
+                history: chatHistory,
+                transcript: window.lastResult ? window.lastResult.transcript : '',
+                summary: window.lastResult ? window.lastResult.summary : ''
+            })
         });
 
         const data = await response.json();
@@ -983,27 +1032,12 @@ async function autoDetectDevice() {
 
         if (result.success) {
             const deviceList = document.getElementById('deviceList');
-            const deviceItems = Array.from(deviceList.querySelectorAll('.device-item'));
-
-            const detectedDevice = deviceItems[result.device_id];
-
-            if (detectedDevice) {
-                deviceItems.forEach(item => {
-                    item.classList.remove('selected');
-                    item.style.border = '';
-                    item.style.backgroundColor = '';
-                });
-
-                detectedDevice.classList.add('selected');
-                detectedDevice.style.border = '2px solid #4CAF50';
-                detectedDevice.style.backgroundColor = '#e8f5e8';
-                detectedDevice.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+            deviceList.value = result.device_id;
 
             btn.innerHTML = '<i class="fas fa-check-circle"></i> Device Detected!';
             btn.style.backgroundColor = '#4CAF50';
 
-            alert(`✅ Detected: ${result.device_name}\nAudio level: ${(result.level * 100).toFixed(2)}%\n\nClick the device again to unselect if needed.`);
+            alert(`✅ Detected: ${result.device_name}\nAudio level: ${(result.level * 100).toFixed(2)}%\n\nChange the dropdown selection if needed.`);
 
             setTimeout(() => {
                 btn.innerHTML = originalText;

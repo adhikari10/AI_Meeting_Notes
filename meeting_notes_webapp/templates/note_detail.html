@@ -1,16 +1,37 @@
 {% extends "base.html" %}
 
 {% block title %}{% if not_found %}Note not found{% else %}Meeting Note{% endif %} — Smart Meeting Notes{% endblock %}
-{% block active_meeting %}active{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/meeting.css') }}">
 {% endblock %}
 
-{% block content %}
-
+{% block shell %}
+<div class="app">
+    <aside class="sidebar">
+        <a href="/" class="side-brand"><span class="mark"><i class="fas fa-robot"></i></span> Smart Meeting Notes</a>
+        <div class="side-scroll">
+            <div class="side-label">Capture</div>
+            {% if not cloud_mode %}
+            <a class="nav-item" href="/meeting"><i class="fas fa-microphone"></i> <span>Live Capture</span></a>
+            {% endif %}
+            <a class="nav-item{% if cloud_mode %} active{% endif %}" href="/meeting#upload"><i class="fas fa-cloud-arrow-up"></i> <span>Upload</span></a>
+            {% if not cloud_mode %}
+            <div class="side-label">Library</div>
+            <a class="nav-item active" href="/meeting#notes"><i class="fas fa-folder-open"></i> <span>My Notes</span></a>
+            {% endif %}
+        </div>
+        <div class="side-foot">
+            <a href="/setup" class="nav-item"><i class="fas fa-cog"></i> <span>Settings</span></a>
+        </div>
+    </aside>
+    <div class="main">
     <div class="container" style="padding-top: 30px;">
+        {% if cloud_mode %}
+        <a href="/meeting#upload" class="back-link"><i class="fas fa-arrow-left"></i> Back to Upload</a>
+        {% else %}
         <a href="/meeting#notes" class="back-link"><i class="fas fa-arrow-left"></i> Back to My Notes</a>
+        {% endif %}
 
         {% if not_found %}
         <div class="cloud-mode-banner" style="margin-top: 20px;">
@@ -102,7 +123,8 @@
         </div>
         {% endif %}
     </div><!-- /.container -->
-
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}

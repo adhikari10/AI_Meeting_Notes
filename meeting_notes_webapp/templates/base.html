@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Smart Meeting Notes{% endblock %}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-
+    {% block shell %}
     <!-- Global Navbar -->
     <nav class="navbar">
         <div class="nav-container">
@@ -40,6 +40,7 @@
             </p>
         </div>
     </footer>
+    {% endblock %}
 
     <!-- Socket.IO (available to all pages) -->
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>

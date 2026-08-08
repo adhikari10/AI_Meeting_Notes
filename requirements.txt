@@ -4,6 +4,7 @@ webrtcvad
 noisereduce
 scipy>=1.10.0
 numpy
+assemblyai
 
 # Audio I/O
 PyAudioWPatch>=0.2.12.7

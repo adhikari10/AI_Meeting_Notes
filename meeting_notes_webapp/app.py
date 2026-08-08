@@ -1,8 +1,20 @@
 # Safe fallback version - works even without VAD libraries
 
 import os
+import sys
 import uuid
 os.environ["PATH"] = r"C:\ProgramData\chocolatey\bin" + os.pathsep + os.environ.get("PATH", "")
+
+# Windows consoles often default to cp1252, which can't encode the emoji
+# used in the startup log messages below — that turns a harmless optional-
+# dependency warning into a fatal UnicodeEncodeError. Force UTF-8 stdout/
+# stderr so those prints always succeed.
+try:
+    if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+except (AttributeError, ValueError):
+    pass
 
 # CLOUD_MODE=true runs the app upload-only, for servers with no audio
 # hardware: no PyAudio/device libraries are imported or initialised, local
@@ -73,8 +85,6 @@ except ImportError:
     YTDLP_AVAILABLE = False
     print("⚠️  yt-dlp not installed — URL transcription disabled")
 
-import sys
-
 # ── Dynamic paths — work in both dev and PyInstaller one-folder bundle ─────────
 _FROZEN = getattr(sys, 'frozen', False)
 if _FROZEN:
@@ -92,8 +102,9 @@ if not _FROZEN:
 
 # Speaker diarization (resemblyzer) is only ever used on the live-recording
 # path (post-recording diarization of audio_buffer) — never on uploaded
-# files, which go through Groq transcription instead. Safe to skip in
-# CLOUD_MODE for a lighter boot with no loss of upload functionality.
+# files, which go through AssemblyAI (speaker-labeled) when
+# ASSEMBLYAI_API_KEY is set, or Groq (flat transcript) otherwise. Safe to
+# skip in CLOUD_MODE for a lighter boot with no loss of upload functionality.
 SPEAKER_DETECTION_AVAILABLE = False
 if CLOUD_MODE:
     print("☁️  CLOUD_MODE enabled — skipping speaker-detection (resemblyzer) import")
@@ -106,11 +117,15 @@ else:
         print(f"⚠️  Speaker detection not available: {e}")
 
 try:
-    from transcription_providers import GroqTranscriptionProvider, probe_duration
+    from transcription_providers import (
+        GroqTranscriptionProvider,
+        AssemblyAITranscriptionProvider,
+        probe_duration,
+    )
     TRANSCRIPTION_PROVIDER_AVAILABLE = True
 except ImportError as e:
     TRANSCRIPTION_PROVIDER_AVAILABLE = False
-    print(f"⚠️  Groq transcription provider not available: {e}")
+    print(f"⚠️  Transcription provider not available: {e}")
 
 load_dotenv(dotenv_path=ENV_PATH)
 
@@ -295,10 +310,14 @@ class MeetingAssistant:
         self.transcription_provider = None
         if TRANSCRIPTION_PROVIDER_AVAILABLE:
             try:
-                self.transcription_provider = GroqTranscriptionProvider()
-                print("✅ Groq file-transcription provider initialised")
+                if os.getenv("ASSEMBLYAI_API_KEY"):
+                    self.transcription_provider = AssemblyAITranscriptionProvider()
+                    print("✅ AssemblyAI file-transcription provider initialised (speaker-labeled)")
+                else:
+                    self.transcription_provider = GroqTranscriptionProvider()
+                    print("✅ Groq file-transcription provider initialised (flat transcript)")
             except Exception as e:
-                print(f"❌ Groq transcription provider setup error: {e}")
+                print(f"❌ Transcription provider setup error: {e}")
 
     def setup_ai_providers(self):
         self.providers = {}
@@ -914,7 +933,8 @@ Return JSON:
         try:
             if not self.transcription_provider:
                 raise RuntimeError(
-                    "Groq transcription provider is not available (check GROQ_API_KEY)"
+                    "No file-transcription provider is available "
+                    "(check ASSEMBLYAI_API_KEY or GROQ_API_KEY)"
                 )
 
             duration_seconds = probe_duration(filepath)
@@ -931,24 +951,30 @@ Return JSON:
             # ratio) were tuned around local Whisper's noisier hallucinations;
             # they may end up firing less often on Groq's cleaner output. Left
             # as-is for now — not removing anything without evidence.
-            sentences = re.split(r'(?<=[.!?])\s+', raw_transcript.strip())
-            seen = set()
-            clean_sentences = []
-            for sentence in sentences:
-                sentence = sentence.strip()
-                if not sentence:
-                    continue
-                if self.is_gibberish(sentence):
-                    print(f"⚠️  Filtered gibberish sentence from file: '{sentence}'")
-                    continue
-                key = sentence.lower()
-                if key in seen:
-                    print(f"⚠️  Duplicate sentence removed: '{sentence}'")
-                    continue
-                seen.add(key)
-                clean_sentences.append(sentence)
+            # Only applies to the flat (Groq) path — AssemblyAI's speaker-
+            # labeled turns would have their "Speaker X: " structure destroyed
+            # by sentence-splitting/dedup across the whole joined string.
+            if not self.transcription_provider.produces_speaker_labels:
+                sentences = re.split(r'(?<=[.!?])\s+', raw_transcript.strip())
+                seen = set()
+                clean_sentences = []
+                for sentence in sentences:
+                    sentence = sentence.strip()
+                    if not sentence:
+                        continue
+                    if self.is_gibberish(sentence):
+                        print(f"⚠️  Filtered gibberish sentence from file: '{sentence}'")
+                        continue
+                    key = sentence.lower()
+                    if key in seen:
+                        print(f"⚠️  Duplicate sentence removed: '{sentence}'")
+                        continue
+                    seen.add(key)
+                    clean_sentences.append(sentence)
 
-            transcript = ' '.join(clean_sentences)
+                transcript = ' '.join(clean_sentences)
+            else:
+                transcript = raw_transcript
             # --------------------------------------------------------
 
             analysis = {"summary": "", "actions": [], "decisions": [], "key_points": []}
@@ -1323,12 +1349,19 @@ def chat_with_note(note_id):
     try:
         data = request.json
 
-        if STATELESS:
-            # No server-side note to load by id — the caller sends the
-            # transcript (and optional summary) straight in the request body.
-            transcript = data.get('transcript', '')
-            summary = data.get('summary', 'No summary available')
-        else:
+        # The caller can send the transcript (and optional summary) straight
+        # in the request body — used for a just-generated result that hasn't
+        # been (or, in STATELESS mode, never gets) saved server-side. Falling
+        # back to a lookup by note_id only when no inline transcript is given
+        # keeps this working for both a fresh in-memory result and an older
+        # saved note opened by id.
+        transcript = data.get('transcript', '')
+        summary = data.get('summary', '')
+
+        if not transcript:
+            if STATELESS:
+                return jsonify({"error": "Note not found"}), 404
+
             note_file = Path(app.config['NOTES_FOLDER']) / f"{note_id}.json"
             if not note_file.exists():
                 return jsonify({"error": "Note not found"}), 404

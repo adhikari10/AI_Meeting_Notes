@@ -35,6 +35,7 @@
 
     </div>
 
+    {% if not cloud_mode %}
     <!-- API Key / Settings strip -->
     <div class="settings-strip" id="settings-strip">
         <div class="settings-strip-inner">
@@ -47,11 +48,13 @@
             </a>
         </div>
     </div>
+    {% endif %}
 
 </main>
 {% endblock %}
 
 {% block extra_js %}
+{% if not cloud_mode %}
 <script>
 fetch('/api/settings')
     .then(r => r.json())
@@ -62,4 +65,5 @@ fetch('/api/settings')
         document.getElementById('api-key-display').textContent = '(unavailable)';
     });
 </script>
+{% endif %}
 {% endblock %}

@@ -1,4 +1,7 @@
-/* ── Home / Landing Page ─────────────────────────────────── */
+/* ── Home / Landing Page ─────────────────────────────────────
+   Restyled for the light canvas introduced in base.css.
+   Every class name preserved; home.html needs no changes.
+   ──────────────────────────────────────────────────────────── */
 .home-main {
     min-height: calc(100vh - 130px);
     display: flex;
@@ -11,21 +14,25 @@
 .home-hero {
     text-align: center;
     margin-bottom: 56px;
-    color: white;
+    color: var(--ink);
 }
 
 .home-hero h1 {
     font-size: 3rem;
+    font-weight: 700;
     margin-bottom: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 16px;
+    letter-spacing: -.02em;
 }
+
+.home-hero h1 i { color: var(--accent); }
 
 .home-tagline {
     font-size: 1.2rem;
-    opacity: 0.88;
+    color: var(--muted);
     max-width: 560px;
     margin: 0 auto;
     line-height: 1.6;
@@ -41,12 +48,13 @@
 }
 
 .mode-card {
-    background: rgba(255, 255, 255, 0.97);
+    background: var(--surface);
+    border: 1px solid var(--line);
     border-radius: 24px;
     padding: 44px 36px;
     text-align: center;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: var(--shadow);
+    transition: transform .28s var(--spring), box-shadow .28s var(--spring);
     cursor: pointer;
     text-decoration: none;
     color: inherit;
@@ -56,14 +64,14 @@
 }
 
 .mode-card:hover {
-    transform: translateY(-12px);
-    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.22);
+    transform: translateY(-8px);
+    box-shadow: 0 24px 60px rgba(108,92,231,.18);
 }
 
 .mode-icon {
     width: 90px;
     height: 90px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--grad);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -71,7 +79,8 @@
     margin-bottom: 24px;
     font-size: 2.2rem;
     color: white;
-    transition: transform 0.3s ease;
+    box-shadow: 0 8px 22px rgba(139,92,246,.32);
+    transition: transform .28s var(--spring);
 }
 
 .mode-card:hover .mode-icon {
@@ -80,32 +89,33 @@
 
 .mode-card h2 {
     font-size: 1.6rem;
-    color: #222;
+    color: var(--ink);
     margin-bottom: 12px;
 }
 
 .mode-card p {
-    color: #666;
+    color: var(--muted);
     line-height: 1.7;
     margin-bottom: 32px;
     font-size: 1rem;
 }
 
 .mode-btn {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--grad);
     color: white;
     padding: 12px 28px;
-    border-radius: 25px;
+    border-radius: 12px;
     font-weight: 600;
     display: inline-flex;
     align-items: center;
     gap: 10px;
     font-size: 1rem;
-    transition: opacity 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 4px 14px rgba(108,92,231,.30);
+    transition: box-shadow .2s ease, transform .2s ease;
 }
 
 .mode-card:hover .mode-btn {
-    opacity: 0.9;
+    box-shadow: 0 8px 22px rgba(108,92,231,.42);
     transform: translateX(4px);
 }
 
@@ -120,35 +130,37 @@
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
     padding: 14px 20px;
+    box-shadow: var(--shadow);
 }
 .settings-label {
     font-size: 0.85rem;
-    color: rgba(255,255,255,0.45);
+    color: var(--muted);
 }
-.settings-label i { margin-right: 6px; color: #7c3aed; }
+.settings-label i { margin-right: 6px; color: var(--accent); }
 .settings-label code {
-    color: #a78bfa;
+    color: var(--accent-ink);
     font-family: monospace;
     font-size: 0.82rem;
 }
 .settings-btn {
     font-size: 0.8rem;
     font-weight: 600;
-    color: #a78bfa;
+    color: var(--accent-ink);
     text-decoration: none;
-    border: 1px solid rgba(124,58,237,0.35);
-    border-radius: 8px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
     padding: 6px 14px;
     white-space: nowrap;
-    transition: background 0.2s, color 0.2s;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 .settings-btn:hover {
-    background: rgba(124,58,237,0.15);
-    color: #c4b5fd;
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-ink);
 }
 
 /* ── Responsive ──────────────────────────────────────────── */

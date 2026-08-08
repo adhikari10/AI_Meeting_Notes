@@ -1,32 +1,35 @@
 {% extends "base.html" %}
 
 {% block title %}Meeting Notes — Smart Meeting Notes{% endblock %}
-{% block active_meeting %}active{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/meeting.css') }}">
 {% endblock %}
 
-{% block content %}
-
-    <!-- Meeting Sub-Navigation -->
-    <div class="meeting-subnav">
-        <div class="subnav-container">
-            <a href="#capture" class="nav-link active">
-                <i class="fas fa-microphone"></i> Live Capture
-            </a>
-            <a href="#upload" class="nav-link">
-                <i class="fas fa-upload"></i> Upload
-            </a>
-            <a href="#notes" class="nav-link">
-                <i class="fas fa-file-alt"></i> My Notes
-            </a>
+{% block shell %}
+<div class="app">
+    <aside class="sidebar">
+        <a href="/" class="side-brand"><span class="mark"><i class="fas fa-robot"></i></span> Smart Meeting Notes</a>
+        <div class="side-scroll">
+            <div class="side-label">Capture</div>
+            {% if not cloud_mode %}
+            <button class="nav-item active" data-view="capture"><i class="fas fa-microphone"></i> <span>Live Capture</span></button>
+            {% endif %}
+            <button class="nav-item{% if cloud_mode %} active{% endif %}" data-view="upload"><i class="fas fa-cloud-arrow-up"></i> <span>Upload</span></button>
+            {% if not cloud_mode %}
+            <div class="side-label">Library</div>
+            <button class="nav-item" data-view="notes"><i class="fas fa-folder-open"></i> <span>My Notes</span></button>
+            {% endif %}
         </div>
-    </div>
-
+        <div class="side-foot">
+            <a href="/setup" class="nav-item"><i class="fas fa-cog"></i> <span>Settings</span></a>
+        </div>
+    </aside>
+    <div class="main">
     <!-- Main Container -->
     <div class="container">
 
+        {% if not cloud_mode %}
         <!-- Live Capture Section -->
         <section id="capture" class="section">
             <div class="section-header">
@@ -34,18 +37,11 @@
                 <p>Record meetings in real-time and get instant AI analysis</p>
             </div>
 
-            {% if cloud_mode %}
-            <div class="cloud-mode-banner">
-                <i class="fas fa-cloud"></i>
-                Live recording — coming soon. Use Upload or paste a video URL below to get a transcript and summary.
-            </div>
-            {% endif %}
-
             <div class="capture-container">
-                <div class="recording-controls{% if cloud_mode %} cloud-disabled{% endif %}">
+                <div class="recording-controls">
                 <div class="capture-options">
                     <div class="option-card" onclick="selectOption('speaker', event)">
-                        <input type="radio" name="captureOption" id="speaker" value="speaker" {% if cloud_mode %}disabled{% endif %}>
+                        <input type="radio" name="captureOption" id="speaker" value="speaker">
                         <label for="speaker">
                             <div class="option-icon">
                                 <i class="fas fa-desktop"></i>
@@ -56,7 +52,7 @@
                     </div>
 
                     <div class="option-card" onclick="selectOption('microphone', event)">
-                        <input type="radio" name="captureOption" id="microphone" value="microphone" {% if cloud_mode %}disabled{% endif %}>
+                        <input type="radio" name="captureOption" id="microphone" value="microphone">
                         <label for="microphone">
                             <div class="option-icon">
                                 <i class="fas fa-microphone-alt"></i>
@@ -67,7 +63,7 @@
                     </div>
 
                     <div class="option-card" onclick="selectOption('both', event)">
-                        <input type="radio" name="captureOption" id="both" value="both" {% if cloud_mode %}disabled{% endif %}>
+                        <input type="radio" name="captureOption" id="both" value="both">
                         <label for="both">
                             <div class="option-icon">
                                 <i class="fas fa-users"></i>
@@ -82,7 +78,7 @@
                 <div class="device-selection">
                     <h3><i class="fas fa-headphones"></i> Select Audio Device</h3>
                     <div style="margin-bottom: 15px; text-align: center;">
-                        <button class="btn-primary" onclick="autoDetectDevice()" style="margin-bottom: 10px;" {% if cloud_mode %}disabled{% endif %}>
+                        <button class="btn-primary" onclick="autoDetectDevice()" style="margin-bottom: 10px;">
                             <i class="fas fa-magic"></i> Auto-Detect Active Speaker
                         </button>
                         <p style="color: #666; font-size: 0.9rem; margin: 5px 0;">
@@ -90,14 +86,14 @@
                         </p>
                     </div>
 
-                    <div class="device-list" id="deviceList">
-                        <div class="loading">{% if cloud_mode %}Not available in cloud mode{% else %}Loading devices...{% endif %}</div>
-                    </div>
+                    <select class="device-list" id="deviceList">
+                        <option value="">Loading devices...</option>
+                    </select>
                 </div>
 
                 <!-- Controls -->
                 <div class="controls">
-                    <button id="startBtn" class="btn-success" onclick="startRecording()" {% if cloud_mode %}disabled{% endif %}>
+                    <button id="startBtn" class="btn-success" onclick="startRecording()">
                         <i class="fas fa-record-vinyl"></i> Start Recording
                     </button>
                     <button id="stopBtn" class="btn-danger" onclick="stopRecording()" disabled>
@@ -106,7 +102,7 @@
                     <button id="pauseBtn" class="btn-warning" onclick="togglePause()" disabled>
                         <i class="fas fa-pause"></i> Pause
                     </button>
-                    <button id="resetBtn" class="btn-info" onclick="resetCapture()" {% if cloud_mode %}disabled{% endif %}>
+                    <button id="resetBtn" class="btn-info" onclick="resetCapture()">
                         <i class="fas fa-redo"></i> Reset
                     </button>
                 </div>
@@ -138,6 +134,7 @@
                 </div>
             </div>
         </section>
+        {% endif %}
 
         <!-- Upload Section -->
         <section id="upload" class="section">
@@ -253,6 +250,7 @@
                         <button class="tab-btn active" onclick="switchTab('transcriptTab', event)">Transcript</button>
                         <button class="tab-btn" onclick="switchTab('summaryTab', event)">Summary</button>
                         <button class="tab-btn" onclick="switchTab('actionsTab', event)">Action Items</button>
+                        <button class="tab-btn" onclick="switchTab('chatTab', event)">💬 Chat</button>
                     </div>
 
                     <div class="tab-content">
@@ -265,11 +263,39 @@
                         <div id="actionsTab" class="tab-pane">
                             <div class="content-box" id="fileActions"></div>
                         </div>
+                        <div id="chatTab" class="tab-pane">
+                            <div class="chat-container">
+                                <div class="chat-messages" id="chatMessages">
+                                    <div class="chat-welcome">
+                                        <i class="fas fa-robot"></i>
+                                        <p>Ask me anything about this meeting!</p>
+                                        <div class="chat-suggestions">
+                                            <button onclick="askSuggestion('What were the main decisions made?')">What were the main decisions?</button>
+                                            <button onclick="askSuggestion('What are the action items?')">What are the action items?</button>
+                                            <button onclick="askSuggestion('Give me a brief summary')">Give me a brief summary</button>
+                                            <button onclick="askSuggestion('What questions were raised?')">What questions were raised?</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="chat-input-row">
+                                    <input
+                                        type="text"
+                                        id="chatInput"
+                                        placeholder="Ask something about this meeting..."
+                                        onkeypress="if(event.key==='Enter') sendChatMessage()"
+                                    />
+                                    <button onclick="sendChatMessage()" id="chatSendBtn" class="btn-primary">
+                                        <i class="fas fa-paper-plane"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </section>
 
+        {% if not cloud_mode %}
         <!-- Notes Section -->
         <section id="notes" class="section">
             <div class="section-header">
@@ -305,9 +331,11 @@
                 </div>
             </div>
         </section>
+        {% endif %}
 
     </div><!-- /.container -->
-
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}

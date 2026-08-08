@@ -5,6 +5,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+import assemblyai as aai
 from openai import OpenAI
 
 
@@ -27,6 +28,8 @@ class GroqTranscriptionProvider(TranscriptionProvider):
     MODEL = "whisper-large-v3-turbo"
     DEFAULT_MAX_CHUNK_BYTES = 24 * 1024 * 1024  # stay under Groq's ~25MB cap
     CHUNK_BITRATE_KBPS = 64  # mono, speech-optimized — keeps chunk sizes predictable
+
+    produces_speaker_labels = False
 
     def __init__(self):
         api_key = os.getenv("GROQ_API_KEY")
@@ -94,6 +97,37 @@ class GroqTranscriptionProvider(TranscriptionProvider):
         print(f"🔪 Split '{Path(path).name}' into {len(chunk_files)} chunk(s) "
               f"(~{chunk_seconds}s each) for Groq transcription")
         return tmp_dir, [str(p) for p in chunk_files]
+
+
+class AssemblyAITranscriptionProvider(TranscriptionProvider):
+    """Transcribes and diarizes audio files via AssemblyAI's speaker-labels API.
+
+    Speaker count is auto-detected (no speakers_expected passed). Diarization
+    needs the whole file in one pass, so unlike GroqTranscriptionProvider this
+    never splits the file into chunks.
+    """
+
+    produces_speaker_labels = True
+
+    def __init__(self):
+        api_key = os.getenv("ASSEMBLYAI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "ASSEMBLYAI_API_KEY is not set — required for AssemblyAI file transcription."
+            )
+        aai.settings.api_key = api_key
+
+    def transcribe_file(self, path: str, language: str = None) -> str:
+        transcript = aai.Transcriber().transcribe(
+            str(path), config=aai.TranscriptionConfig(speaker_labels=True)
+        )
+
+        if transcript.status == aai.TranscriptStatus.error:
+            raise RuntimeError(transcript.error)
+
+        return '\n'.join(
+            f"Speaker {u.speaker}: {u.text}" for u in transcript.utterances
+        )
 
 
 def probe_duration(path: str):
