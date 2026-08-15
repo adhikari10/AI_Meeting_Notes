@@ -3,6 +3,10 @@
 
 -r requirements-base.txt
 
+webrtcvad
+noisereduce
+scipy>=1.10.0
+
 # Live audio capture (PyAudioWPatch is Windows-only)
 PyAudioWPatch>=0.2.12.7
 

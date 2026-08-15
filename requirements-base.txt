@@ -16,7 +16,4 @@ ffmpeg-python
 python-dotenv
 
 # Optional — degrade cleanly if absent (VAD noise suppression, URL ingestion)
-webrtcvad
-noisereduce
-scipy>=1.10.0
 yt-dlp
