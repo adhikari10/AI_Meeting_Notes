@@ -1493,6 +1493,7 @@ def process_url():
         ytdlp_proxy = os.getenv("YTDLP_PROXY")
         if ytdlp_proxy:
             ydl_opts['proxy'] = ytdlp_proxy
+            print(f"[YTDLP] proxy_set={bool(ytdlp_proxy)}")
 
         print(f"📥 Downloading audio from: {url}")
 
