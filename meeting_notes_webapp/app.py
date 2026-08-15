@@ -35,7 +35,6 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
-import whisper
 from openai import OpenAI
 
 # Audio-device libraries (PyAudio / PyAudioWPatch) touch real sound hardware
@@ -278,6 +277,7 @@ class MeetingAssistant:
         else:
             try:
                 _whisper_size = os.getenv("WHISPER_MODEL", "base")
+                import whisper
                 self.whisper_model = whisper.load_model(_whisper_size)
                 print(f"✅ Whisper model loaded ({_whisper_size})")
             except Exception as e:
