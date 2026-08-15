@@ -1,0 +1,22 @@
+# Shared dependencies — needed by both the web (cloud) and desktop (self-host) tracks.
+# Platform-agnostic and Linux-clean.
+
+# Web framework
+flask
+flask-socketio
+flask-cors
+
+# Transcription (cloud path: AssemblyAI + Groq-via-OpenAI-client) and shared audio math
+assemblyai
+openai>=1.0.0
+numpy
+ffmpeg-python
+
+# Config
+python-dotenv
+
+# Optional — degrade cleanly if absent (VAD noise suppression, URL ingestion)
+webrtcvad
+noisereduce
+scipy>=1.10.0
+yt-dlp

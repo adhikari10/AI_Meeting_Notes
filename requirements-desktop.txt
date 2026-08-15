@@ -1,0 +1,15 @@
+# Self-hosted desktop / open-source install (full features incl. live recording
+# and local Whisper transcription). Install this for the standalone app.
+
+-r requirements-base.txt
+
+# Live audio capture (PyAudioWPatch is Windows-only)
+PyAudioWPatch>=0.2.12.7
+
+# Local transcription — code imports `whisper` (the openai-whisper package)
+openai-whisper
+
+# Desktop launcher / packaging
+pywebview>=4.0
+pyinstaller>=6.0
+Pillow>=10.0

@@ -1,0 +1,7 @@
+# Cloud / hosted stateless deployment (Render). Install this on the server.
+# Includes the shared base plus the WSGI server and async worker.
+
+-r requirements-base.txt
+
+gunicorn
+eventlet
