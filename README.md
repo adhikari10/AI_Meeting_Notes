@@ -1,380 +1,247 @@
-# AI Meeting Note Taker
+# Smart Meeting Notes
 
-An intelligent meeting assistant with **two interfaces**: a **CLI backend** and a **Web Application**. Records audio, transcribes it in real-time using OpenAI Whisper, and generates automated meeting summaries, action items, and decisions using AI (Groq, DeepSeek, or OpenAI).
+Turn any meeting recording into a clean, structured set of notes. Upload an
+audio or video file (or paste a link), and get back a full transcript plus an
+AI-generated summary, key points, action items, decisions, open questions, and
+next steps — in seconds.
 
-## Features
-
-- 🎤 **Real-time Audio Capture** - Records from microphone or system audio (speaker output)
-- 🗣️ **Live Transcription** - Uses OpenAI Whisper for accurate speech-to-text
-- 🤖 **AI Analysis** - Automatically extracts:
-  - Meeting summaries
-  - Action items
-  - Decisions made
-  - Key insights
-- 🌐 **Web Interface** - Beautiful, modern web UI for easy access
-- 💻 **CLI Interface** - Terminal-based interface for power users
-- 💾 **Data Storage** - Saves meetings and notes (SQLite for CLI, JSON for webapp)
-- 📊 **Export Options** - Download notes as text files
-- 🎨 **Rich UI** - Clean, professional interface for both CLI and web
-
-## Project Structure
-
-```
-AI_note_taker/
-├── .env                      # Environment variables (API keys)
-├── .env.example              # Example environment file
-├── .gitignore               # Git ignore rules
-├── README.md                # This file
-├── requirements.txt         # Python dependencies
-│
-├── backend/                 # CLI Backend Application
-│   ├── api_client.py        # API client interface
-│   ├── config.py            # Configuration management
-│   ├── database.py          # Database operations
-│   ├── main.py              # Main CLI entry point
-│   ├── meeting_ai.py        # AI analysis logic
-│   ├── meeting_assistant.py # Meeting assistant
-│   ├── meeting_capture.py   # Audio capture logic
-│   ├── meeting_notes/       # Saved CLI notes
-│   ├── smart_notes.py       # Smart notes processing
-│   ├── start.py             # Backend startup script
-│   └── transcriber.py       # Transcription logic
-│
-├── meeting_notes_webapp/    # Web Application
-│   ├── app.py              # Flask web server
-│   ├── templates/          # HTML templates
-│   │   └── index.html
-│   ├── static/             # CSS/JS/assets
-│   │   ├── css/
-│   │   └── js/
-│   ├── notes/              # Webapp saved notes
-│   └── uploads/            # Uploaded audio files
-│
-└── venv/                    # Python virtual environment
-```
-
-## Requirements
-
-- Python 3.8+
-- Microphone or audio input device
-- Groq API key (free) OR DeepSeek/OpenAI API key
-
-## Installation & Launch (Windows)
-
-### New user — one-time setup
-
-1. **Install Python 3.10+** from [python.org](https://python.org) if you don't have it.
-
-2. **Double-click `install.bat`**
-
-   This will:
-   - Create a `venv/` virtual environment
-   - Install all dependencies from `requirements.txt`
-   - Create a **"Meeting Notes AI"** shortcut on your Desktop
-
-3. **Double-click the Desktop shortcut** (or `run_app.bat`) to launch.
-
-4. On first launch, a setup page appears — enter your API key and you're done.
-   The app opens in its own window (no browser needed).
-
-> **Get a free Groq API key:** [console.groq.com/keys](https://console.groq.com/keys) — no credit card required.
+> **Try it now:** <HOSTED_URL_PLACEHOLDER>
+> No sign-up, nothing to install. Upload a file or paste a link and you're done.
+> *(Free preview — see [Limits](#limits) below.)*
 
 ---
 
-### Files added for launching
+## What it does
 
-| File | Purpose |
-|---|---|
-| `install.bat` | One-time setup — creates venv, installs deps, creates Desktop shortcut |
-| `run_app.bat` | Daily launcher — finds Python in venv and starts the app |
-| `create_shortcut.ps1` | PowerShell script called by `install.bat` to create the Desktop shortcut |
-| `launcher.py` | Python entry point — starts Flask in background, opens pywebview window |
+- **Transcription** — accurate speech-to-text on your recordings.
+- **Structured summary** — every transcript is distilled into six fields:
+  summary, key points, action items, decisions, open questions, and next steps.
+- **Chat with your transcript** — ask follow-up questions about what was said.
+- **Speaker labels** — on uploaded files, speakers are separated (Speaker A,
+  Speaker B, …) where the audio supports it.
+- **Export** — download your notes as a text file.
+
+There are two ways to use it: the **hosted preview** (easiest), or **run it
+yourself** for full local processing and live recording.
 
 ---
 
-### Manual launch (developers)
+## Option 1 — Hosted preview
+
+The fastest way to try it. Nothing to install.
+
+1. Go to **<HOSTED_URL_PLACEHOLDER>**
+2. Either:
+   - **Upload** an audio or video file, or
+   - **Paste a link** to a media file.
+3. Wait a few seconds for transcription and analysis.
+4. Read your notes across the tabs (Transcript, Summary, Actions), chat with
+   the transcript, or download the result.
+
+### Limits
+
+The hosted version is a free preview, so a few things are intentionally capped:
+
+- **Upload-only.** Live recording isn't available in the hosted version — that
+  lives in the self-hosted edition (below).
+- **File size** is limited (currently around 50 MB per upload).
+- **Daily usage** is limited per user to keep the preview free for everyone.
+- **Direct media links work best.** Links to hostile platforms (e.g. YouTube,
+  TikTok) may not download in the hosted version — use a direct file link or
+  upload the file instead.
+- **Nothing is stored on the server.** The hosted preview is stateless: your
+  transcript and notes live in your browser session and are not saved
+  server-side. Close the tab and they're gone.
+
+---
+
+## Option 2 — Run it yourself (self-hosted)
+
+The self-hosted edition is the full-featured version: it transcribes locally
+with Whisper, supports **live recording** (capture a meeting as it happens), and
+saves your notes to disk. You bring your own API key for the AI summary step.
+
+### Requirements
+
+- **Python 3.11** (3.9+ should work; 3.11 is what's tested)
+- **ffmpeg** on your system PATH (used to decode audio/video)
+- A **Groq API key** (free tier is generous) — or another supported provider
+- Windows, macOS, or Linux
+
+> **Note on live recording:** capturing system/speaker audio is best supported
+> on Windows. On macOS/Linux you can still record from a microphone and process
+> uploaded files.
+
+### 1. Clone and enter the project
 
 ```bash
-# One-time
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-
-# Every launch
-venv\Scripts\python.exe launcher.py
+git clone <REPO_URL_PLACEHOLDER>
+cd AI_note_taker
 ```
 
-Or run the web server directly (browser-only, no desktop window):
+### 2. Create and activate a virtual environment
+
+**Windows (PowerShell):**
+```powershell
+python -m venv venv
+venv\Scripts\Activate.ps1
+```
+
+**macOS / Linux:**
+```bash
+python -m venv venv
+source venv/bin/activate
+```
+
+### 3. Install dependencies
+
+Dependencies are split into layers so you only install what you need.
+
+**For the full desktop experience (local Whisper + live recording):**
+```bash
+pip install -r requirements-base.txt
+pip install -r requirements-desktop.txt
+```
+
+**If you only want the web/upload features (no local recording):**
+```bash
+pip install -r requirements-web.txt
+```
+
+> **ffmpeg:** if you don't already have it —
+> Windows: `choco install ffmpeg` (or download from ffmpeg.org and add to PATH).
+> macOS: `brew install ffmpeg`.
+> Linux: `sudo apt-get install ffmpeg`.
+
+> **PyAudio on Windows:** if `pip` fails to build it, try
+> `pip install pipwin && pipwin install pyaudio`.
+
+### 4. Add your API key
+
+Copy the example env file and fill in your key:
+
+```bash
+cp .env.example .env
+```
+
+Then open `.env` in a text editor and set at least:
+
+```
+GROQ_API_KEY=your-groq-api-key-here
+```
+
+Get a free Groq key at <https://console.groq.com>. Other providers (OpenAI,
+DeepSeek) are supported via their own keys — see `.env.example` for the options.
+
+> ⚠️ **Never commit `.env`.** It's already in `.gitignore`. Only `.env.example`
+> (with no real keys) belongs in the repo.
+
+> **Edit `.env` in a real editor**, not by appending from PowerShell — the `>>`
+> operator writes the wrong encoding and can corrupt the file.
+
+### 5. Run
 
 ```bash
 cd meeting_notes_webapp
 python app.py
-# then open http://localhost:5000
 ```
+
+Then open **http://localhost:5000** in your browser.
 
 ---
 
-### Changing your API key
+## Using the app
 
-Click **Settings** in the footer of the app at any time, or go to `http://localhost:5000/setup`.
+The interface has a sidebar with a few views:
+
+- **Record** *(self-hosted only)* — capture a live meeting. Pick an audio
+  device and start; transcription appears as the meeting goes. On Windows you
+  can capture speaker output (for Zoom/Teams/Meet) by enabling **Stereo Mix**
+  in your sound settings.
+- **Upload** — drop in an audio/video file, or paste a media link. Watch it
+  transcribe and analyze, then review the results.
+- **My Notes** *(self-hosted only)* — your saved notes, stored as JSON files on
+  disk. Open any note to view its transcript, summary, and actions, or download
+  it.
+- **Recap** — a consolidated view of the generated summary and highlights.
+
+Supported upload formats include common audio and video types (MP3, WAV, M4A,
+MP4, and similar). Larger or noisier recordings take longer and transcribe less
+cleanly — good input audio is the single biggest factor in output quality.
 
 ---
 
-### CLI Backend (power users)
+## How it works
 
-```bash
-cd backend
-python main.py
-```
+1. **Audio in** — from an uploaded file, a pasted link, or (self-hosted) a live
+   recording.
+2. **Transcription** — Groq's hosted Whisper, or a local Whisper model on the
+   desktop edition, converts speech to text. Uploaded files can additionally be
+   run through a diarization step to separate speakers.
+3. **Analysis** — the transcript is sent to an LLM (Llama 3.3 via Groq by
+   default) which returns the six structured fields.
+4. **Output** — results are shown in the browser and, on the self-hosted
+   edition, saved to disk as JSON.
 
-**Workflow:**
-1. Select audio device from the list
-2. Start meeting — recording begins automatically
-3. See live transcription and AI analysis in the terminal
-4. Press `Ctrl+C` to stop and generate final report
-5. Meeting notes saved to `backend/meeting_notes/`
+---
 
-## Output Files
+## Configuration
 
-### Web Application
-- **`meeting_notes_webapp/notes/*.json`** - Saved meeting notes with full analysis
-- **`meeting_notes_webapp/uploads/`** - Uploaded audio files
+Set these in your `.env` (self-hosted) — see `.env.example` for the full list:
 
-### CLI Backend
-- **`backend/meetings.db`** - SQLite database with all meetings
-- **`backend/meeting_notes/*.txt`** - Text reports of meetings
+| Variable          | Purpose                                            |
+|-------------------|----------------------------------------------------|
+| `GROQ_API_KEY`    | Powers transcription (hosted Whisper) and summary. |
+| `OPENAI_API_KEY`  | Optional alternative AI provider.                  |
+| `DEEPSEEK_API_KEY`| Optional alternative AI provider.                  |
+| `WHISPER_MODEL`   | Local Whisper size: `tiny`/`base`/`small`/`medium`/`large`. `base` is a good default. |
 
-### Sample Report Structure
+If no AI key is set, the app falls back to a basic non-AI summary so it still
+runs — but the quality is much lower. A Groq key is strongly recommended.
 
-```json
-{
-  "title": "meeting_upload_20260203_172345.json",
-  "timestamp": "2026-02-03T17:23:45.123456",
-  "source": "upload",
-  "file": "team_meeting.mp3",
-  "transcript": "Full meeting transcript...",
-  "summary": "Brief 1-2 sentence summary of the meeting",
-  "actions": [
-    "John: Fix database bug by Friday",
-    "Sarah: Review PR #123"
-  ],
-  "decisions": [
-    "Move to bi-weekly sprints",
-    "Adopt new deployment process"
-  ]
-}
-```
-
-## Configuration Options
-
-### Web Application
-Configure in `meeting_notes_webapp/app.py`:
-- **AI Model Selection** - Choose from Groq, DeepSeek, or local processing
-- **Upload Limits** - Max 100MB file size
-- **Audio Processing** - Whisper base model (configurable)
-
-### CLI Backend
-Edit `backend/config.py` to customize:
-- **`SAMPLE_RATE`** - Audio sample rate (default: 16000 Hz)
-- **`CHUNK_DURATION`** - Audio chunk size in seconds (default: 5)
-- **`WHISPER_MODEL`** - Model size: tiny, base, small, medium, large
-- **`DB_PATH`** - Database file location
+---
 
 ## Troubleshooting
 
-### PyAudio Installation Issues
+**App won't start / port in use**
+Something else is on port 5000. Stop it, or change the port in `app.py`.
 
-**Windows:**
-```bash
-pip install pipwin
-pipwin install pyaudio
-```
+**"Module not found"**
+Your virtual environment isn't active, or dependencies aren't installed for the
+edition you're running. Re-activate the venv and re-run the relevant
+`pip install -r ...` from step 3.
 
-**macOS:**
-```bash
-brew install portaudio
-pip install pyaudio
-```
+**Transcription or summary fails**
+Check that `GROQ_API_KEY` is set correctly in `.env`, that the key is valid, and
+that you have an internet connection. Try a smaller file.
 
-**Linux:**
-```bash
-sudo apt-get install portaudio19-dev python3-pyaudio
-pip install pyaudio
-```
+**A pasted link fails to download**
+Direct media links work best. Some platforms actively block automated
+downloads; upload the file directly instead.
 
-### Web Application Not Starting
+**No audio captured (live recording)**
+Confirm the right input device is selected and not muted. For speaker capture on
+Windows, enable **Stereo Mix** in your sound settings.
 
-1. Check if port 5000 is already in use
-2. Verify all dependencies are installed: `pip install -r requirements.txt`
-3. Check Flask and Flask-SocketIO are installed correctly
-4. Review terminal output for specific error messages
-
-### No Audio Detected
-
-1. Check microphone permissions in system settings
-2. Run `backend/start.py` to test microphone
-3. Try selecting a different device
-4. Ensure microphone is not muted
-5. For speaker capture, enable "Stereo Mix" in Windows sound settings
-
-### API Errors
-
-- Verify API key is correct in `.env` file
-- Check API rate limits and quota
-- Ensure you have internet connection
-- For Groq: Free tier has generous limits
-- For DeepSeek: Check credit balance
-- For OpenAI: Verify billing is set up
-
-### Whisper Model Issues
-
-- First run downloads the model (may take time)
-- Try a smaller model if running out of memory
-- Ensure sufficient disk space (~1-5GB for models)
-- Check internet connection for initial download
-
-## Dependencies
-
-Core dependencies:
-- **openai-whisper** - Speech-to-text transcription
-- **pyaudio** - Audio capture
-- **openai** - API client for Groq/DeepSeek/OpenAI
-- **flask** - Web application framework
-- **flask-socketio** - Real-time communication
-- **flask-cors** - Cross-origin resource sharing
-- **python-dotenv** - Environment variable management
-- **rich** - Terminal UI (CLI only)
-- **numpy** - Numerical operations
-
-See `requirements.txt` for complete list.
-
-## API Costs
-
-**Groq (Recommended):**
-- FREE tier with generous limits
-- Fast inference (~400 tokens/sec)
-- No credit card required
-
-**DeepSeek:**
-- Very affordable (~$0.14 per 1M input tokens)
-- Good for high-volume usage
-
-**OpenAI:**
-- GPT-3.5-turbo: ~$0.50 per 1M input tokens
-- Higher cost but widely available
-
-**Whisper:**
-- Runs locally, no API costs
-- Uses CPU/GPU resources
-
-## Privacy & Security
-
-- ⚠️ **Never commit your `.env` file with API keys**
-- `.env` is automatically excluded by `.gitignore`
-- Audio is processed locally with Whisper
-- Transcripts are sent to AI provider for analysis only
-- All data stored locally in your machine
-- No telemetry or tracking
-- Review your AI provider's privacy policy
-
-## Tips for Best Results
-
-1. **Use a good microphone** - Better audio = better transcription
-2. **Minimize background noise** - Improves accuracy significantly
-3. **Speak clearly** - Helps Whisper transcribe correctly
-4. **Test before important meetings** - Run `backend/start.py` first
-5. **Choose appropriate Whisper model**:
-   - `tiny` - Fastest, less accurate (good for testing)
-   - `base` - Good balance (recommended)
-   - `small` - Better accuracy, slower
-   - `medium/large` - Best accuracy, requires more resources
-6. **For virtual meetings** - Enable Stereo Mix to capture speaker output
-7. **Review generated reports** - AI may miss context or make errors
-
-## Development
-
-### Running in Development Mode
-
-**Web Application:**
-```bash
-cd meeting_notes_webapp
-python app.py
-```
-Debug mode is enabled by default. The server will auto-reload on file changes.
-
-**CLI Backend:**
-```bash
-cd backend
-python main.py
-```
-
-### Project Technologies
-
-- **Backend**: Python 3.8+
-- **Web Framework**: Flask + Flask-SocketIO
-- **AI Models**: Whisper (local), Groq/DeepSeek/OpenAI (API)
-- **Database**: SQLite (CLI), JSON (webapp)
-- **Frontend**: HTML, CSS, JavaScript (Vanilla)
-- **Real-time**: WebSockets via Socket.IO
-
-## Contributing
-
-Contributions are welcome! To contribute:
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes
-4. Test thoroughly
-5. Commit your changes: `git commit -m "Add feature"`
-6. Push to the branch: `git push origin feature-name`
-7. Submit a pull request
-
-Please ensure your code follows Python best practices and includes appropriate documentation.
-
-## Known Issues
-
-- PyAudio can be tricky to install on some systems
-- First Whisper model download may take several minutes
-- WebSocket connections may drop on slow networks (will auto-reconnect)
-- Large audio files (>100MB) may take time to process
-
-## Roadmap
-
-- [ ] Speaker diarization (identify who said what)
-- [ ] Multi-language support
-- [ ] Calendar integration
-- [ ] Email summaries
-- [ ] Mobile app
-- [ ] Cloud deployment options
-- [ ] Team collaboration features
-
-## License
-
-MIT License - Feel free to use and modify for your needs.
-
-## Support
-
-For issues or questions:
-1. Check the Troubleshooting section above
-2. Review error messages carefully
-3. Ensure all dependencies are installed
-4. Verify API keys are configured correctly
-5. Check existing GitHub issues
-6. Open a new issue with:
-   - Clear description of the problem
-   - Steps to reproduce
-   - Error messages (if any)
-   - Your environment (OS, Python version)
-
-## Acknowledgments
-
-- OpenAI Whisper for excellent speech recognition
-- Groq for providing fast, free AI inference
-- Flask community for the excellent web framework
-- All contributors and users
+**Whisper is slow or runs out of memory (self-hosted)**
+Use a smaller `WHISPER_MODEL` (e.g. `base` or `tiny`). The first run downloads
+the model, which can take a while.
 
 ---
 
-**Happy Note Taking! 📝🤖**
+## Privacy
 
-Made with ❤️ by Bibek Adhikari
+- **Hosted preview:** stateless. Transcripts and notes are not saved on the
+  server — they exist only in your browser session.
+- **Self-hosted:** everything stays on your machine. Audio is transcribed
+  locally (with local Whisper), notes are saved to your own disk, and the only
+  data that leaves your computer is the transcript text sent to your chosen AI
+  provider for the summary step. Review that provider's privacy policy.
+- **Never commit your `.env`** — it holds your API keys and is gitignored by
+  default.
+
+---
+
+## License
+
+<LICENSE_PLACEHOLDER — add your license, e.g. MIT>
