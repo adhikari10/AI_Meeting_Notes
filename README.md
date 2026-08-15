@@ -5,7 +5,7 @@ audio or video file (or paste a link), and get back a full transcript plus an
 AI-generated summary, key points, action items, decisions, open questions, and
 next steps — in seconds.
 
-> **Try it now:** <HOSTED_URL_PLACEHOLDER>
+> **Try it now:** (https://ai-meeting-notes-65ar.onrender.com/)
 > No sign-up, nothing to install. Upload a file or paste a link and you're done.
 > *(Free preview — see [Limits](#limits) below.)*
 
@@ -30,7 +30,7 @@ yourself** for full local processing and live recording.
 
 The fastest way to try it. Nothing to install.
 
-1. Go to **<HOSTED_URL_PLACEHOLDER>**
+1. Go to **https://ai-meeting-notes-65ar.onrender.com/**
 2. Either:
    - **Upload** an audio or video file, or
    - **Paste a link** to a media file.
@@ -75,7 +75,7 @@ saves your notes to disk. You bring your own API key for the AI summary step.
 ### 1. Clone and enter the project
 
 ```bash
-git clone <REPO_URL_PLACEHOLDER>
+git clone https://github.com/adhikari10/AI_Meeting_Notes/
 cd AI_note_taker
 ```
 
