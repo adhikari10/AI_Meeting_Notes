@@ -1444,8 +1444,6 @@ MEETING SUMMARY (for context):
 @app.route('/api/process-url', methods=['POST'])
 def process_url():
     try:
-        if CLOUD_MODE:
-            return jsonify({"error": "URL transcription is not available in cloud mode"}), 403
         if not YTDLP_AVAILABLE:
             return jsonify({"error": "yt-dlp is not installed on this server"}), 501
 
@@ -1472,6 +1470,10 @@ def process_url():
             'quiet': True,
             'no_warnings': True,
         }
+
+        ytdlp_proxy = os.getenv("YTDLP_PROXY")
+        if ytdlp_proxy:
+            ydl_opts['proxy'] = ytdlp_proxy
 
         print(f"📥 Downloading audio from: {url}")
 
