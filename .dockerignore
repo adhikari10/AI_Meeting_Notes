@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+**/.env
+__pycache__/
+**/__pycache__/
+*.pyc
+venv/
+.venv/
+uploads/
+notes/
+*.spec
+launcher.py
+installer.iss
+requirements-desktop.txt
+app_backup.py
+**/app_backup.py
