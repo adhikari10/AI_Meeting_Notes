@@ -61,6 +61,7 @@ else:
 
 import numpy as np
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 from dotenv import load_dotenv
 
 # Try to import VAD libraries, but don't fail if they're missing
@@ -126,7 +127,7 @@ except ImportError as e:
     TRANSCRIPTION_PROVIDER_AVAILABLE = False
     print(f"⚠️  Transcription provider not available: {e}")
 
-load_dotenv(dotenv_path=ENV_PATH)
+load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 app = Flask(__name__,
             template_folder=str(_HERE / 'templates'),
@@ -165,6 +166,18 @@ CORS(app)
 @app.context_processor
 def inject_cloud_mode():
     return {'cloud_mode': CLOUD_MODE}
+
+
+@app.template_global()
+def asset_url(filename):
+    """url_for('static', ...) with a mtime query param, so browsers pick up
+    edited JS/CSS immediately instead of serving a stale cached copy."""
+    path = Path(app.static_folder) / filename
+    try:
+        version = int(path.stat().st_mtime)
+    except OSError:
+        version = 0
+    return url_for('static', filename=filename, v=version)
 
 
 recording_active = False
@@ -1342,7 +1355,13 @@ def process_file():
                 filepath.unlink(missing_ok=True)
             except Exception as e:
                 print(f"⚠️  Failed to delete uploaded file {filepath}: {e}")
-        
+
+    except RequestEntityTooLarge:
+        max_mb = app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)
+        return jsonify({
+            "error": f"File is too large. Maximum upload size is {max_mb} MB."
+        }), 413
+
     except Exception as e:
         import traceback
         traceback.print_exc()

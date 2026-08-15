@@ -521,9 +521,9 @@ function handleFile(file) {
         return;
     }
 
-    const maxSize = 500 * 1024 * 1024;
+    const maxSize = 1024 * 1024 * 1024;
     if (file.size > maxSize) {
-        alert(`File is too large! Maximum size is 500MB.\n\nYour file: ${formatFileSize(file.size)}\n\nPlease compress your video or extract audio only.`);
+        alert(`File is too large! Maximum size is 1GB.\n\nYour file: ${formatFileSize(file.size)}\n\nPlease compress your video or extract audio only.`);
         return;
     }
 
@@ -586,7 +586,16 @@ async function processFile() {
             body: formData
         });
 
-        if (!response.ok) throw new Error('Processing failed');
+        if (!response.ok) {
+            let message = 'Processing failed';
+            try {
+                const errorBody = await response.json();
+                if (errorBody && errorBody.error) message = errorBody.error;
+            } catch (e) {
+                // response body wasn't JSON — keep the generic message
+            }
+            throw new Error(message);
+        }
 
         const result = await response.json();
         updateProgress(100, 'Processing complete!');

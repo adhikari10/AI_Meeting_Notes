@@ -340,5 +340,5 @@
 
 {% block extra_js %}
 <script>window.CLOUD_MODE = {{ 'true' if cloud_mode else 'false' }};</script>
-<script src="{{ url_for('static', filename='js/meeting.js') }}"></script>
+<script src="{{ asset_url('js/meeting.js') }}"></script>
 {% endblock %}

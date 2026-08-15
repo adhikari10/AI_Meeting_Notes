@@ -134,5 +134,5 @@
     window.STANDALONE_NOTE_ID = {{ note_id|tojson }};
     {% endif %}
 </script>
-<script src="{{ url_for('static', filename='js/meeting.js') }}"></script>
+<script src="{{ asset_url('js/meeting.js') }}"></script>
 {% endblock %}
