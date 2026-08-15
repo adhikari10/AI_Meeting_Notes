@@ -244,4 +244,5 @@ the model, which can take a while.
 
 ## License
 
-<LICENSE_PLACEHOLDER — add your license, e.g. MIT>
+This project is licensed under the Apache License 2.0 — see the
+[LICENSE](LICENSE) file for details.
