@@ -1444,6 +1444,8 @@ MEETING SUMMARY (for context):
 @app.route('/api/process-url', methods=['POST'])
 def process_url():
     try:
+        if CLOUD_MODE:
+            return jsonify({"error": "URL transcription is not available in cloud mode"}), 403
         if not YTDLP_AVAILABLE:
             return jsonify({"error": "yt-dlp is not installed on this server"}), 501
 
