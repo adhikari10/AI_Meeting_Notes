@@ -4,4 +4,4 @@ WORKDIR /app
 COPY requirements-web.txt requirements-base.txt ./
 RUN pip install --no-cache-dir -r requirements-web.txt
 COPY . .
-CMD gunicorn -k eventlet -w 1 -b 0.0.0.0:$PORT meeting_notes_webapp.app:app
+CMD gunicorn -k gevent -w 1 -b 0.0.0.0:$PORT meeting_notes_webapp.app:app

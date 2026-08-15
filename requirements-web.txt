@@ -4,4 +4,5 @@
 -r requirements-base.txt
 
 gunicorn
-eventlet
+gevent
+gevent-websocket

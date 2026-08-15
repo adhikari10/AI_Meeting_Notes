@@ -157,7 +157,7 @@ Path(app.config['NOTES_FOLDER']).mkdir(exist_ok=True)
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode='eventlet' if CLOUD_MODE else 'threading'
+    async_mode='gevent' if CLOUD_MODE else 'threading'
 )
 CORS(app)
 
