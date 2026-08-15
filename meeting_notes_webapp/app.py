@@ -154,7 +154,11 @@ app.config['MAX_CONTENT_LENGTH'] = int(os.getenv("MAX_UPLOAD_MB", "500")) * 1024
 Path(app.config['UPLOAD_FOLDER']).mkdir(exist_ok=True)
 Path(app.config['NOTES_FOLDER']).mkdir(exist_ok=True)
 
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode='eventlet' if CLOUD_MODE else 'threading'
+)
 CORS(app)
 
 
@@ -1794,6 +1798,10 @@ def handle_start_recording(data):
 @socketio.on('stop_recording')
 def handle_stop_recording():
     global recording_active, recording_thread
+    if CLOUD_MODE:
+        emit('error', {'message': 'Live recording is not available in cloud mode'})
+        return
+
     recording_active = False
     emit('recording_status', {'status': 'Recording stopped'})
     emit('speaker_detection_start', {'message': 'Analyzing speakers... please wait'})
