@@ -64,6 +64,8 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 from dotenv import load_dotenv
 
+from .rate_limit import rate_limited
+
 # Try to import VAD libraries, but don't fail if they're missing
 VAD_AVAILABLE = False
 try:
@@ -1307,6 +1309,7 @@ def auto_detect_device():
         }), 500
 
 @app.route('/api/process-file', methods=['POST'])
+@rate_limited
 def process_file():
     try:
         if 'file' not in request.files:
@@ -1461,6 +1464,7 @@ MEETING SUMMARY (for context):
 
 
 @app.route('/api/process-url', methods=['POST'])
+@rate_limited
 def process_url():
     try:
         if not YTDLP_AVAILABLE:
