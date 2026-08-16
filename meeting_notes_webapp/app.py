@@ -36,7 +36,7 @@ from flask import Flask, render_template, request, jsonify, send_file, redirect,
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 from openai import OpenAI
-
+from .rate_limit import rate_limited
 # Audio-device libraries (PyAudio / PyAudioWPatch) touch real sound hardware
 # at initialisation time — skip importing them entirely in CLOUD_MODE so a
 # server with no audio devices (or without PyAudio installed at all) still
@@ -63,7 +63,6 @@ import numpy as np
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 from dotenv import load_dotenv
-
 from .rate_limit import rate_limited
 
 # Try to import VAD libraries, but don't fail if they're missing

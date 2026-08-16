@@ -664,6 +664,7 @@
 
 .url-input {
     flex: 1;
+    min-width: 0;
     padding: 11px 15px;
     border-radius: 11px;
     border: 1px solid var(--line);
@@ -864,6 +865,12 @@
 @media (max-width: 720px) {
     .sidebar { position: static; height: auto; width: 100%; }
     .app { flex-direction: column; }
+}
+
+@media (max-width: 480px) {
+    .url-input-section { padding: 18px 16px; }
+    .url-input-row { flex-direction: column; }
+    .url-input-row .btn-primary { width: 100%; justify-content: center; }
 }
 
 /* ── Feedback prompt ─────────────────────────────────────── */
