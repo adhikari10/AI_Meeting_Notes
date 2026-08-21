@@ -18,7 +18,7 @@ class Config:
 
     # Models
     WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
-    AI_MODEL = os.getenv("AI_MODEL", "llama-3.3-70b-versatile")  # llama-3.3-70b-versatile, deepseek-chat, or gpt-3.5-turbo
+    AI_MODEL = os.getenv("AI_MODEL", os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"))  # openai/gpt-oss-120b, deepseek-chat, or gpt-3.5-turbo
     
     # Audio settings
     SAMPLE_RATE = 16000

@@ -603,7 +603,7 @@ class MeetingAssistant:
         client = self.providers[provider]
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
             messages=[
                 {"role": "system", "content": f"You are an expert meeting analyst. This is a {scale} transcript. Return ONLY valid JSON, no markdown, no extra text."},
                 {"role": "user", "content": prompt}
@@ -910,7 +910,7 @@ Return JSON:
 
         def _request(tokens):
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
@@ -1064,7 +1064,7 @@ _PROVIDER_BASE_URL = {
     'deepseek': 'https://api.deepseek.com/v1',
 }
 _PROVIDER_DEFAULT_MODEL = {
-    'groq':     'llama-3.3-70b-versatile',
+    'groq':     os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
     'openai':   'gpt-4o-mini',
     'deepseek': 'deepseek-chat',
 }
@@ -1443,7 +1443,7 @@ MEETING SUMMARY (for context):
         client = assistant.providers[provider]
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b"),
             messages=messages,
             max_tokens=500,
             temperature=0.3

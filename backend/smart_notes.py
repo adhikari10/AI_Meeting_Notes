@@ -92,7 +92,7 @@ class SmartNotesApp:
                         api_key=api_key,
                         base_url="https://api.groq.com/openai/v1"
                     )
-                    self.ai_model = "llama-3.3-70b-versatile"
+                    self.ai_model = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
                 elif os.getenv("DEEPSEEK_API_KEY"):
                     self.ai_client = OpenAI(
                         api_key=api_key,

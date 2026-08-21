@@ -153,7 +153,7 @@ from meeting_capture import MeetingCapture
 Current configuration in `.env`:
 - **GROQ_API_KEY**: ✅ Configured (Active)
 - **AI_PROVIDER**: groq
-- **AI_MODEL**: llama-3.3-70b-versatile
+- **GROQ_MODEL**: openai/gpt-oss-120b
 - **WHISPER_MODEL**: base
 
 ## Architecture
