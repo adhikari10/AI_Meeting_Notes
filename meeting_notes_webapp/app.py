@@ -1562,12 +1562,15 @@ def process_url():
             return jsonify({"error": "This video is private"}), 400
         elif 'not available' in error_msg:
             return jsonify({"error": "Video not available in your region"}), 400
+        elif '403' in error_msg or 'Forbidden' in error_msg or 'Sign in to confirm' in error_msg:
+            return jsonify({"error": "YouTube blocks downloads from cloud servers. Please download the audio yourself and use the Upload tab instead."}), 400
         else:
-            return jsonify({"error": f"Download failed: {error_msg[:200]}"}), 500
+            print(f"[YTDLP] DownloadError: {error_msg}")
+            return jsonify({"error": "Download failed. This URL may not be supported."}), 500
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Something went wrong processing this URL."}), 500
 
 
 @app.route('/api/generate-summary', methods=['POST'])

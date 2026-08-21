@@ -480,7 +480,7 @@ async function processVideoUrl() {
 
     } catch (error) {
         statusDiv.className = 'url-status error';
-        statusDiv.innerHTML = `❌ ${error.message}`;
+        statusDiv.textContent = '❌ ' + error.message;
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-download"></i> Transcribe';
