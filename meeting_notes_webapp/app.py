@@ -1535,14 +1535,25 @@ def process_url():
 
         print(f"📥 Downloading audio from: {url}")
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            video_title = info.get('title', 'Unknown Title')
-            duration = info.get('duration', 0)
+        def _download():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                title = info.get('title', 'Unknown Title')
+                dur = info.get('duration', 0)
 
-            # yt-dlp changes the extension after postprocessing
-            filename = ydl.prepare_filename(info)
-            audio_path = Path(filename).with_suffix('.mp3')
+                # yt-dlp changes the extension after postprocessing
+                filename = ydl.prepare_filename(info)
+                path = Path(filename).with_suffix('.mp3')
+                return title, dur, path
+
+        try:
+            video_title, duration, audio_path = _download()
+        except yt_dlp.utils.DownloadError as e:
+            if 'Sign in to confirm' in str(e):
+                print("[YTDLP] Bot-check hit — retrying download once")
+                video_title, duration, audio_path = _download()
+            else:
+                raise
 
         if not audio_path.exists():
             return jsonify({"error": "Audio download failed — file not found after conversion"}), 500
@@ -1597,7 +1608,9 @@ def process_url():
             return jsonify({"error": "This video is private"}), 400
         elif 'not available' in error_msg:
             return jsonify({"error": "Video not available in your region"}), 400
-        elif '403' in error_msg or 'Forbidden' in error_msg or 'Sign in to confirm' in error_msg:
+        elif 'Sign in to confirm' in error_msg:
+            return jsonify({"error": "YouTube is temporarily rate-limiting this video — please try again in a moment, or try a different link."}), 429
+        elif '403' in error_msg or 'Forbidden' in error_msg:
             return jsonify({"error": "YouTube blocks downloads from cloud servers. Please download the audio yourself and use the Upload tab instead."}), 400
         else:
             print(f"[YTDLP] DownloadError: {error_msg}")
