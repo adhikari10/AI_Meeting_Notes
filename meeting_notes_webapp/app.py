@@ -929,22 +929,32 @@ Return JSON:
             print(f"⚠️  AI response truncated at {max_tokens} tokens — retrying with more room")
             choice = _request(min(max_tokens * 2, 4096))
 
-        content = choice.message.content
+        def _parse(choice):
+            content = choice.message.content
 
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
 
-        # Defensive normalization — models occasionally emit "smart" quotes
-        # (curly “ ” / ‘ ’) inside otherwise-valid JSON, which breaks strict
-        # parsing. response_format=json_object should prevent this, but keep
-        # the fallback in case a provider ignores that flag.
-        content = (content
-                   .replace('“', '"').replace('”', '"')
-                   .replace('‘', "'").replace('’', "'"))
+            # Defensive normalization — models occasionally emit "smart" quotes
+            # (curly “ ” / ‘ ’) inside otherwise-valid JSON, which breaks strict
+            # parsing. response_format=json_object should prevent this, but keep
+            # the fallback in case a provider ignores that flag.
+            content = (content
+                       .replace('“', '"').replace('”', '"')
+                       .replace('‘', "'").replace('’', "'"))
 
-        return json.loads(content)
+            return json.loads(content)
+
+        try:
+            return _parse(choice)
+        except json.JSONDecodeError:
+            # JSON mode is probabilistic — a stray unescaped quote can break
+            # an otherwise-good response. One extra roll before giving up.
+            print("⚠️  AI response failed JSON parsing — retrying once")
+            choice = _request(max_tokens)
+            return _parse(choice)
 
     def process_file(self, filepath, options):
         import re
