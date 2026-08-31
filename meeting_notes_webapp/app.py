@@ -1491,6 +1491,9 @@ def process_url():
             }],
             'quiet': True,
             'no_warnings': True,
+            'retries': 5,
+            'fragment_retries': 5,
+            'socket_timeout': 30,
         }
 
         ytdlp_proxy = os.getenv("YTDLP_PROXY")
