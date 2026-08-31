@@ -1382,6 +1382,9 @@ def chat_with_note(note_id):
         # saved note opened by id.
         transcript = data.get('transcript', '')
         summary = data.get('summary', '')
+        actions = data.get('actions', [])
+        decisions = data.get('decisions', [])
+        key_points = data.get('key_points', [])
 
         if not transcript:
             if STATELESS:
@@ -1396,6 +1399,9 @@ def chat_with_note(note_id):
 
             transcript = note_data.get('transcript', '')
             summary = note_data.get('summary', 'No summary available')
+            actions = note_data.get('actions', [])
+            decisions = note_data.get('decisions', [])
+            key_points = note_data.get('key_points', [])
 
         if not transcript or len(transcript.strip()) < 20:
             return jsonify({"error": "This note has no transcript to chat with"}), 400
@@ -1410,15 +1416,31 @@ def chat_with_note(note_id):
             {
                 "role": "system",
                 "content": f"""You are a helpful meeting assistant.
-Answer questions based ONLY on the meeting transcript provided.
-If the answer is not in the transcript, say "I couldn't find that in this meeting's transcript."
+Answer questions based ONLY on the meeting transcript and the pre-computed
+analysis below.
+If the answer is not in either, say "I couldn't find that in this meeting's transcript."
 Be concise and direct. Use bullet points for lists.
+
+When asked about action items or decisions, treat the ACTION ITEMS and
+DECISIONS lists below as authoritative — they were already extracted from
+the full recording by the analysis pipeline, so prefer them over re-scanning
+the transcript yourself. Use the transcript for everything else (quotes,
+detail, context not captured in those lists).
 
 MEETING TRANSCRIPT:
 {transcript[:8000]}
 
 MEETING SUMMARY (for context):
-{summary}"""
+{summary}
+
+ACTION ITEMS (already extracted, authoritative):
+{json.dumps(actions) if actions else "None identified."}
+
+DECISIONS (already extracted, authoritative):
+{json.dumps(decisions) if decisions else "None identified."}
+
+KEY POINTS (already extracted, for context):
+{json.dumps(key_points) if key_points else "None identified."}"""
             }
         ]
 
