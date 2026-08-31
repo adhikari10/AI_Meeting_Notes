@@ -16,4 +16,4 @@ ffmpeg-python
 python-dotenv
 
 # Optional — degrade cleanly if absent (VAD noise suppression, URL ingestion)
-yt-dlp
+yt-dlp==2026.8.19
