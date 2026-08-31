@@ -702,8 +702,12 @@ class MeetingAssistant:
             "For lecture/talk/educational content: focus the summary and key "
             "points on the concepts, arguments, and information conveyed, "
             "written so someone who never watched it can understand what the "
-            "speaker was teaching or explaining. Leave 'actions' and "
-            "'decisions' empty for non-meeting content — don't force them."
+            "speaker was teaching or explaining. For 'actions': if this is a "
+            "meeting, list assigned tasks with owner/deadline if mentioned; "
+            "otherwise list the concrete actions or recommendations a "
+            "listener could actually take away — only leave it empty if "
+            "there is genuinely nothing actionable at all. Leave "
+            "'decisions' empty for non-meeting content — don't force it."
         )
 
         if scale == "short":
@@ -717,7 +721,7 @@ class MeetingAssistant:
 Return JSON:
 {{
   "summary": "2-3 sentences covering what this is about and its main point",
-  "actions": ["action if any, else leave empty"],
+  "actions": ["action, recommendation, or concrete takeaway if any, else leave empty"],
   "decisions": ["decision if any, else leave empty"],
   "key_points": ["1-3 substantive points, each a full explanatory sentence"]
 }}"""
@@ -733,7 +737,7 @@ Return JSON:
 Return JSON:
 {{
   "summary": "3-5 sentences explaining what was discussed or taught and why it matters",
-  "actions": ["action items with owner if mentioned, else leave empty"],
+  "actions": ["action items (owner if mentioned) for a meeting, or concrete recommendations/takeaways for other content, else leave empty"],
   "decisions": ["decisions made, else leave empty"],
   "key_points": ["4-7 substantive points — each a full sentence explaining a specific concept, fact, or discussion point in enough detail to stand alone"],
   "topics": ["main topics/subjects covered"]
@@ -750,7 +754,7 @@ Return JSON:
 Return JSON:
 {{
   "summary": "5-8 sentence in-depth overview: what this covers, the structure/flow of the content, and why it matters",
-  "actions": ["action items with owner and deadline if mentioned, else leave empty"],
+  "actions": ["action items (owner/deadline if mentioned) for a meeting, or concrete recommendations/takeaways a listener could act on for other content, else leave empty"],
   "decisions": ["all decisions made, else leave empty"],
   "key_points": ["7-12 substantive points — each a full sentence explaining a specific concept, argument, or fact in enough detail that someone who didn't watch this could understand what the speaker covered"],
   "topics": ["all main topics/subjects covered"],
@@ -798,15 +802,17 @@ Return JSON:
             print(f"   Summarizing chunk {i+1}/{len(chunks)}...")
             chunk_prompt = f"""Summarize this section of a transcript (part {i+1} of {len(chunks)}).
 This could be a meeting, a lecture/lesson, a talk, or an interview — judge
-from the content and adapt. For lecture/educational content, focus on the
-concepts and information explained rather than forcing meeting-style fields.
+from the content and adapt. For lecture/educational content, focus the
+summary and key points on the concepts and information explained rather
+than forcing meeting-style fields — but still capture any concrete actions
+or recommendations a listener could take away, in 'actions'.
 
 {chunk}
 
 Return JSON:
 {{
   "summary": "2-4 sentences on what this section covers",
-  "actions": ["action items in this section, else leave empty"],
+  "actions": ["action items for a meeting, or concrete recommendations/takeaways for other content, from this section, else leave empty"],
   "decisions": ["decisions in this section, else leave empty"],
   "key_points": ["3-6 substantive points — each a full sentence explaining a specific concept, fact, or discussion point from this section"]
 }}"""
@@ -853,15 +859,20 @@ each section:
 
 {all_summaries}
 
+Candidate action items collected from individual sections (deduplicate,
+consolidate, and discard any that aren't genuine actions or recommendations):
+{json.dumps(list(dict.fromkeys(all_actions)))}
+
 Combine these into a final comprehensive report, adapted to what this
 content actually is. For lecture/educational content, the summary and key
 points should let someone who never watched it understand what the speaker
-taught or discussed — don't force meeting-style fields onto it.
+taught or discussed — don't force meeting-style fields onto it, but do
+surface any concrete actions or recommendations a listener could take away.
 
 Return JSON:
 {{
   "summary": "6-10 sentence in-depth overview covering the full arc of the content and why it matters",
-  "actions": {json.dumps(list(dict.fromkeys(all_actions)))},
+  "actions": ["action items (owner/deadline if mentioned) for a meeting, or concrete recommendations/takeaways for other content, consolidated across the whole recording — only empty if genuinely nothing actionable"],
   "decisions": {json.dumps(list(dict.fromkeys(all_decisions)))},
   "key_points": ["10-15 most important points from the whole recording — each a full sentence explaining a specific concept, argument, or fact in enough detail to stand alone"],
   "topics": ["all major topics/subjects covered across all sections"],
