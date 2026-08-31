@@ -951,7 +951,10 @@ async function sendChatMessage() {
                 question: question,
                 history: chatHistory,
                 transcript: window.lastResult ? window.lastResult.transcript : '',
-                summary: window.lastResult ? window.lastResult.summary : ''
+                summary: window.lastResult ? window.lastResult.summary : '',
+                actions: window.lastResult ? window.lastResult.actions : [],
+                decisions: window.lastResult ? window.lastResult.decisions : [],
+                key_points: window.lastResult ? window.lastResult.key_points : []
             })
         });
 
